@@ -70,17 +70,23 @@ class TestSchemaEndpoint:
 
 
 class TestTasksEndpoint:
+    @staticmethod
+    def _task_list(payload):
+        return payload if isinstance(payload, list) else payload["tasks"]
+
     def test_returns_200(self, client):
         r = client.get("/tasks")
         assert r.status_code == 200
 
     def test_returns_three_tasks(self, client):
         data = client.get("/tasks").json()
-        assert len(data) == 3
+        tasks = self._task_list(data)
+        assert len(tasks) == 3
 
     def test_task_ids(self, client):
         data = client.get("/tasks").json()
-        ids = {t["task_id"] for t in data}
+        tasks = self._task_list(data)
+        ids = {t["task_id"] for t in tasks}
         assert ids == {"easy", "medium", "hard"}
 
 
