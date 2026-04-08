@@ -1,0 +1,41 @@
+services:
+  # ---- Python FastAPI environment server ----
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+      target: api-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app/apps/api
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # ---- Next.js SUPERCELL dashboard ----
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+      target: web-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/public:/app/apps/web/public
+      - ./apps/web/next.config.ts:/app/apps/web/next.config.ts
+      - ./apps/web/postcss.config.mjs:/app/apps/web/postcss.config.mjs
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
+      - WATCHPACK_POLLING=true
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

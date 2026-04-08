@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.venv/
+*.egg-info/
+
+# Build
+.next/
+out/
+dist/
+build/
+apps/web/out/
+apps/web/.next/
+
+# Cache
+.turbo/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
+
+# Python
+*.egg
+*.whl
+
+# Misc
+*.log
+
+# Root __init__ not needed
+__init__.py
+models/
