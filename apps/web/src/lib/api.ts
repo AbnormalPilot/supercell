@@ -105,7 +105,10 @@ export const api = {
   metadata: () =>
     fetchJSON<{ name: string; description: string; version: string }>("/metadata"),
 
-  tasks: () => fetchJSON<TaskInfo[]>("/tasks"),
+  tasks: async () => {
+    const payload = await fetchJSON<TaskInfo[] | { tasks: TaskInfo[] }>("/tasks");
+    return Array.isArray(payload) ? payload : payload.tasks;
+  },
 
   reset: (taskId: string) =>
     fetchJSON<{ observation: Observation; reward: number | null; done: boolean }>(

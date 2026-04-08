@@ -132,7 +132,11 @@ def create_app() -> FastAPI:
 
     @app.get("/tasks")
     async def tasks():
-        return list_tasks()
+        task_list = list_tasks()
+        return {
+            "tasks": task_list,
+            "count": len(task_list),
+        }
 
     # ---- Core OpenEnv endpoints ----
 
