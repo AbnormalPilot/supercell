@@ -452,10 +452,19 @@ def list_tasks() -> list[dict]:
     return [
         {
             "task_id": tid,
+            "id": tid,
             "task_name": builder().task_name,
+            "name": builder().task_name,
             "description": builder().description,
             "num_flights": len(builder().flights),
             "max_steps": builder().max_steps,
+            # Explicit grader metadata for external validators that require
+            # tasks to declare grading support.
+            "has_grader": True,
+            "grader": {
+                "type": "deterministic",
+                "endpoint": "/grade",
+            },
         }
         for tid, builder in TASKS.items()
     ]
