@@ -356,4 +356,8 @@ def choose_heuristic_action(obs: dict) -> int:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"[DEBUG] fatal error: {exc}", flush=True)
+        log_end(success=False, steps=0, score=0.0, rewards=[])
