@@ -31,7 +31,10 @@ import urllib.error
 import urllib.request
 from typing import List, Optional
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 
 # ── Configuration ────────────────────────────────────────────────────────────
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
@@ -139,7 +142,7 @@ def main() -> None:
         if LOCAL_IMAGE_NAME:
             docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
 
-        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key")
+        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key") if OpenAI is not None else None
         http = EnvClient(base_url=active_url, timeout=30.0)
 
         # Verify health
@@ -166,35 +169,39 @@ def main() -> None:
                 if done:
                     break
 
-                # Ask LLM
+                # Ask LLM if available, otherwise fallback to heuristic.
                 action_idx: Optional[int] = None
-                for _attempt in range(3):
-                    try:
-                        completion = llm.chat.completions.create(
-                            model=MODEL_NAME,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "You are an expert air traffic controller AI. "
-                                        "Respond only with JSON."
-                                    ),
-                                },
-                                {"role": "user", "content": build_prompt(obs)},
-                            ],
-                            temperature=0.0,
-                            max_tokens=100,
-                        )
-                        action_idx = parse_action(completion.choices[0].message.content or "")
-                        if action_idx is not None:
-                            break
-                    except Exception as exc:
-                        last_error = str(exc)
-                        time.sleep(1)
+                if llm is not None:
+                    for _attempt in range(3):
+                        try:
+                            completion = llm.chat.completions.create(
+                                model=MODEL_NAME,
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": (
+                                            "You are an expert air traffic controller AI. "
+                                            "Respond only with JSON."
+                                        ),
+                                    },
+                                    {"role": "user", "content": build_prompt(obs)},
+                                ],
+                                temperature=0.0,
+                                max_tokens=100,
+                            )
+                            action_idx = parse_action(completion.choices[0].message.content or "")
+                            if action_idx is not None:
+                                break
+                        except Exception as exc:
+                            last_error = str(exc)
+                            time.sleep(1)
 
                 if action_idx is None:
-                    action_idx = 0
-                    last_error = "parse_failed"
+                    action_idx = choose_heuristic_action(obs)
+                    if OpenAI is None:
+                        last_error = "openai_missing_used_heuristic"
+                    elif last_error is None:
+                        last_error = "parse_failed_used_heuristic"
 
                 # Step environment
                 try:
@@ -330,6 +337,22 @@ def parse_action(text: str) -> Optional[int]:
         return int(m.group(1))
     m = re.search(r"\d+", text)
     return int(m.group(0)) if m else None
+
+
+def choose_heuristic_action(obs: dict) -> int:
+    flights = obs.get("flights", []) or []
+    if not flights:
+        return 0
+
+    def score_key(f: dict) -> tuple[int, int, int]:
+        emergency = f.get("emergency", "NONE")
+        em_rank = 0 if emergency == "MAYDAY" else 1 if emergency == "PAN_PAN" else 2
+        can_land_penalty = 0 if f.get("can_land_now", True) else 1
+        fuel = int(f.get("fuel_minutes", 10_000))
+        return (can_land_penalty, em_rank, fuel)
+
+    best = sorted(flights, key=score_key)[0]
+    return int(best.get("index", 0))
 
 
 if __name__ == "__main__":
