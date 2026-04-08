@@ -137,8 +137,10 @@ def create_app() -> FastAPI:
     # ---- Core OpenEnv endpoints ----
 
     @app.post("/reset", response_model=ResetResponse)
-    async def reset(req: ResetRequest):
-        obs = env.reset(seed=req.seed, episode_id=req.episode_id)
+    async def reset(req: Optional[ResetRequest] = None):
+        seed = req.seed if req else None
+        episode_id = req.episode_id if req else None
+        obs = env.reset(seed=seed, episode_id=episode_id)
         _initialized["value"] = True
         obs_dict = obs.model_dump()
         return ResetResponse(
