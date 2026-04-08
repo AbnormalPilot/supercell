@@ -196,6 +196,9 @@ def create_app() -> FastAPI:
         return RedirectResponse(url="/docs")
 
     if os.path.isdir(web_dist):
+        next_assets_dir = os.path.join(web_dist, "_next")
+        if os.path.isdir(next_assets_dir):
+            app.mount("/_next", StaticFiles(directory=next_assets_dir), name="web-next-assets")
         app.mount("/web", StaticFiles(directory=web_dist, html=True), name="web")
 
     return app
