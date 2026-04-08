@@ -34,11 +34,64 @@ from typing import List, Optional
 try:
     from openai import OpenAI
 except Exception:
-    OpenAI = None
+    class _FallbackMessage:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class _FallbackChoice:
+        def __init__(self, content: str) -> None:
+            self.message = _FallbackMessage(content)
+
+    class _FallbackCompletion:
+        def __init__(self, content: str) -> None:
+            self.choices = [_FallbackChoice(content)]
+
+    class _FallbackCompletions:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self._base_url = base_url.rstrip("/")
+            self._api_key = api_key
+
+        def create(
+            self,
+            model: str,
+            messages: list[dict],
+            temperature: float = 0.0,
+            max_tokens: int = 100,
+        ) -> _FallbackCompletion:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            req = urllib.request.Request(
+                f"{self._base_url}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self._api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            content = (
+                (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
+                or '{"flight_index": 0}'
+            )
+            return _FallbackCompletion(content)
+
+    class _FallbackChat:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self.completions = _FallbackCompletions(base_url, api_key)
+
+    class OpenAI:  # type: ignore[override]
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self.chat = _FallbackChat(base_url, api_key)
 
 # ── Configuration ────────────────────────────────────────────────────────────
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY          = os.getenv("HF_TOKEN")
+API_KEY          = os.getenv("API_KEY")
 API_BASE_URL     = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME       = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 TASK_NAME        = os.getenv("SUPERCELL_TASK", "hard")
@@ -142,7 +195,12 @@ def main() -> None:
         if LOCAL_IMAGE_NAME:
             docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
 
-        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key") if OpenAI is not None else None
+        if not API_KEY:
+            print("[DEBUG] Missing API_KEY environment variable", flush=True)
+            log_end(success=False, steps=0, score=0.0, rewards=[])
+            return
+
+        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
         http = EnvClient(base_url=active_url, timeout=30.0)
 
         # Verify health
@@ -169,38 +227,35 @@ def main() -> None:
                 if done:
                     break
 
-                # Ask LLM if available, otherwise fallback to heuristic.
+                # Ask LLM through injected proxy.
                 action_idx: Optional[int] = None
-                if llm is not None:
-                    for _attempt in range(3):
-                        try:
-                            completion = llm.chat.completions.create(
-                                model=MODEL_NAME,
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": (
-                                            "You are an expert air traffic controller AI. "
-                                            "Respond only with JSON."
-                                        ),
-                                    },
-                                    {"role": "user", "content": build_prompt(obs)},
-                                ],
-                                temperature=0.0,
-                                max_tokens=100,
-                            )
-                            action_idx = parse_action(completion.choices[0].message.content or "")
-                            if action_idx is not None:
-                                break
-                        except Exception as exc:
-                            last_error = str(exc)
-                            time.sleep(1)
+                for _attempt in range(3):
+                    try:
+                        completion = llm.chat.completions.create(
+                            model=MODEL_NAME,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "You are an expert air traffic controller AI. "
+                                        "Respond only with JSON."
+                                    ),
+                                },
+                                {"role": "user", "content": build_prompt(obs)},
+                            ],
+                            temperature=0.0,
+                            max_tokens=100,
+                        )
+                        action_idx = parse_action(completion.choices[0].message.content or "")
+                        if action_idx is not None:
+                            break
+                    except Exception as exc:
+                        last_error = str(exc)
+                        time.sleep(1)
 
                 if action_idx is None:
                     action_idx = choose_heuristic_action(obs)
-                    if OpenAI is None:
-                        last_error = "openai_missing_used_heuristic"
-                    elif last_error is None:
+                    if last_error is None:
                         last_error = "parse_failed_used_heuristic"
 
                 # Step environment
