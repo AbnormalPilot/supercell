@@ -27,9 +27,10 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from typing import List, Optional
 
-import httpx
 from openai import OpenAI
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -73,13 +74,169 @@ def _wait_for_health(url: str, timeout: int = 60) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            r = httpx.get(f"{url}/health", timeout=3.0)
-            if r.status_code == 200:
-                return True
+            req = urllib.request.Request(f"{url}/health", method="GET")
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                if resp.status == 200:
+                    return True
         except Exception:
             pass
         time.sleep(2)
     return False
+
+
+class EnvClient:
+    """Tiny stdlib HTTP client to avoid external runtime deps."""
+
+    def __init__(self, base_url: str, timeout: float = 30.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def request(self, method: str, path: str, payload: Optional[dict] = None) -> dict:
+        body = None
+        headers = {"Content-Type": "application/json"}
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
+
+    def get(self, path: str) -> dict:
+        return self.request("GET", path)
+
+    def post(self, path: str, payload: Optional[dict] = None) -> dict:
+        return self.request("POST", path, payload)
+
+    def close(self) -> None:
+        return
+
+
+def env_reset(http: EnvClient, task_id: str) -> dict:
+    return http.post("/reset", {"episode_id": task_id})
+
+
+def env_step(http: EnvClient, flight_index: int) -> dict:
+    return http.post("/step", {"action": {"flight_index": flight_index}})
+
+
+def env_grade(http: EnvClient) -> dict:
+    return http.post("/grade")
+
+
+def main() -> None:
+    docker_proc = None
+    active_url = ENV_URL
+
+    try:
+        # Start docker container if image name provided
+        if LOCAL_IMAGE_NAME:
+            docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
+
+        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key")
+        http = EnvClient(base_url=active_url, timeout=30.0)
+
+        # Verify health
+        try:
+            http.get("/health")
+        except Exception:
+            print(f"[DEBUG] Cannot reach environment at {active_url}", flush=True)
+            log_end(success=False, steps=0, score=0.0, rewards=[])
+            return
+
+        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+
+        rewards: List[float] = []
+        steps_taken = 0
+        score = 0.0
+        success = False
+        last_error: Optional[str] = None
+
+        try:
+            obs = env_reset(http, TASK_NAME)
+            done = obs.get("done", False)
+
+            for step in range(1, MAX_STEPS + 1):
+                if done:
+                    break
+
+                # Ask LLM
+                action_idx: Optional[int] = None
+                for _attempt in range(3):
+                    try:
+                        completion = llm.chat.completions.create(
+                            model=MODEL_NAME,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "You are an expert air traffic controller AI. "
+                                        "Respond only with JSON."
+                                    ),
+                                },
+                                {"role": "user", "content": build_prompt(obs)},
+                            ],
+                            temperature=0.0,
+                            max_tokens=100,
+                        )
+                        action_idx = parse_action(completion.choices[0].message.content or "")
+                        if action_idx is not None:
+                            break
+                    except Exception as exc:
+                        last_error = str(exc)
+                        time.sleep(1)
+
+                if action_idx is None:
+                    action_idx = 0
+                    last_error = "parse_failed"
+
+                # Step environment
+                try:
+                    step_result = env_step(http, action_idx)
+                    step_obs = step_result.get("observation") or step_result
+                    reward = float(step_result.get("reward") or 0.0)
+                    done = step_result.get("done", False) or step_obs.get("done", False)
+                    obs = step_obs if "flights" in step_obs else obs
+                    last_error = step_obs.get("last_action_error") or None
+                except Exception as exc:
+                    reward = 0.0
+                    last_error = str(exc)
+                    done = True
+
+                rewards.append(reward)
+                steps_taken = step
+                action_str = f"flight_index={action_idx}"
+                log_step(step=step, action=action_str, reward=reward, done=done, error=last_error)
+
+                if done:
+                    break
+
+            # Grade
+            try:
+                grade = env_grade(http)
+                score = float(grade.get("score", 0.0))
+            except Exception:
+                score = 0.0
+
+            success = score >= SUCCESS_THRESHOLD
+
+        except Exception as exc:
+            last_error = str(exc)
+            print(f"[DEBUG] Episode error: {exc}", flush=True)
+
+        finally:
+            log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+            http.close()
+
+    finally:
+        if docker_proc is not None:
+            docker_proc.terminate()
 
 
 def start_docker_container(image: str) -> tuple[subprocess.Popen, str]:
@@ -173,136 +330,6 @@ def parse_action(text: str) -> Optional[int]:
         return int(m.group(1))
     m = re.search(r"\d+", text)
     return int(m.group(0)) if m else None
-
-
-# ── Environment HTTP helpers ──────────────────────────────────────────────────
-def env_reset(http: httpx.Client, task_id: str) -> dict:
-    r = http.post("/reset", json={"episode_id": task_id})
-    r.raise_for_status()
-    return r.json()
-
-
-def env_step(http: httpx.Client, flight_index: int) -> dict:
-    r = http.post("/step", json={"action": {"flight_index": flight_index}})
-    r.raise_for_status()
-    return r.json()
-
-
-def env_grade(http: httpx.Client) -> dict:
-    r = http.post("/grade")
-    r.raise_for_status()
-    return r.json()
-
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-def main() -> None:
-    docker_proc = None
-    active_url = ENV_URL
-
-    try:
-        # Start docker container if image name provided
-        if LOCAL_IMAGE_NAME:
-            docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
-
-        llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key")
-        http = httpx.Client(base_url=active_url, timeout=30.0)
-
-        # Verify health
-        try:
-            r = http.get("/health")
-            r.raise_for_status()
-        except Exception as exc:
-            print(f"[DEBUG] Cannot reach environment at {active_url}: {exc}", flush=True)
-            log_end(success=False, steps=0, score=0.0, rewards=[])
-            return
-
-        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-
-        rewards: List[float] = []
-        steps_taken = 0
-        score = 0.0
-        success = False
-        last_error: Optional[str] = None
-
-        try:
-            obs = env_reset(http, TASK_NAME)
-            done = obs.get("done", False)
-
-            for step in range(1, MAX_STEPS + 1):
-                if done:
-                    break
-
-                # Ask LLM
-                action_idx: Optional[int] = None
-                for _attempt in range(3):
-                    try:
-                        completion = llm.chat.completions.create(
-                            model=MODEL_NAME,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "You are an expert air traffic controller AI. "
-                                        "Respond only with JSON."
-                                    ),
-                                },
-                                {"role": "user", "content": build_prompt(obs)},
-                            ],
-                            temperature=0.0,
-                            max_tokens=100,
-                        )
-                        action_idx = parse_action(completion.choices[0].message.content or "")
-                        if action_idx is not None:
-                            break
-                    except Exception as exc:
-                        last_error = str(exc)
-                        time.sleep(1)
-
-                if action_idx is None:
-                    action_idx = 0
-                    last_error = "parse_failed"
-
-                # Step environment
-                try:
-                    step_result = env_step(http, action_idx)
-                    step_obs = step_result.get("observation") or step_result
-                    reward = float(step_result.get("reward") or 0.0)
-                    done = step_result.get("done", False) or step_obs.get("done", False)
-                    obs = step_obs if "flights" in step_obs else obs
-                    last_error = step_obs.get("last_action_error") or None
-                except Exception as exc:
-                    reward = 0.0
-                    last_error = str(exc)
-                    done = True
-
-                rewards.append(reward)
-                steps_taken = step
-                action_str = f"flight_index={action_idx}"
-                log_step(step=step, action=action_str, reward=reward, done=done, error=last_error)
-
-                if done:
-                    break
-
-            # Grade
-            try:
-                grade = env_grade(http)
-                score = float(grade.get("score", 0.0))
-            except Exception:
-                score = 0.0
-
-            success = score >= SUCCESS_THRESHOLD
-
-        except Exception as exc:
-            last_error = str(exc)
-            print(f"[DEBUG] Episode error: {exc}", flush=True)
-
-        finally:
-            log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
-            http.close()
-
-    finally:
-        if docker_proc is not None:
-            docker_proc.terminate()
 
 
 if __name__ == "__main__":
