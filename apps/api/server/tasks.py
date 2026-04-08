@@ -461,9 +461,12 @@ def list_tasks() -> list[dict]:
             # Explicit grader metadata for external validators that require
             # tasks to declare grading support.
             "has_grader": True,
+            "grader_id": tid,
             "grader": {
+                "id": tid,
                 "type": "deterministic",
                 "endpoint": "/grade",
+                "scoring_range": [0.0, 1.0],
             },
         }
         for tid, builder in TASKS.items()

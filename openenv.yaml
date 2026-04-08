@@ -8,3 +8,28 @@ version: "1.0.0"
 description: "SUPERCELL — AI-powered air traffic control emergency triage. Prioritize landing order under fuel, weather, and emergency constraints."
 action: ATCAction
 observation: ATCObservation
+
+tasks:
+  - id: easy
+    name: "Clear Skies Priority"
+    description: "4 inbound flights under clear skies. One MAYDAY fuel emergency and one PAN-PAN with medical passenger."
+    grader:
+      id: easy
+      type: deterministic
+      endpoint: /grade
+
+  - id: medium
+    name: "Storm Window"
+    description: "7 inbound flights with a storm approaching. Balance fuel urgency against shrinking weather window."
+    grader:
+      id: medium
+      type: deterministic
+      endpoint: /grade
+
+  - id: hard
+    name: "Mass Diversion Crisis"
+    description: "12 aircraft diverted with three MAYDAYs, two PAN-PANs, fuel traps, and oscillating weather."
+    grader:
+      id: hard
+      type: deterministic
+      endpoint: /grade

@@ -144,6 +144,7 @@ def create_app() -> FastAPI:
                     "id": task_id,
                     "type": "deterministic",
                     "endpoint": "/grade",
+                    "scoring_range": [0.0, 1.0],
                 }
                 for task_id in GRADERS.keys()
             ],
