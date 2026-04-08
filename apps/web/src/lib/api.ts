@@ -7,13 +7,17 @@ import type {
   TaskInfo,
 } from "./types";
 
-const BASE =
-  typeof window !== "undefined" && window.location.hostname !== "localhost"
-    ? ""
-    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+function getBaseUrl(): string {
+  // In the browser (including HF Spaces), always call same-origin API.
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  // Fallback for non-browser execution paths.
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+}
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
