@@ -14,6 +14,8 @@ def _tasks_payload(client: TestClient) -> dict:
     res = client.get("/tasks")
     assert res.status_code == 200
     data = res.json()
+    if isinstance(data, list):
+        return {"tasks": data, "count": len(data)}
     assert isinstance(data, dict)
     assert "tasks" in data
     assert isinstance(data["tasks"], list)
@@ -50,6 +52,15 @@ def test_each_task_declares_grader() -> None:
         assert task["has_grader"] is True
         assert task["grader"]["type"] == "deterministic"
         assert task["grader"]["endpoint"] == "/grade"
+
+
+def test_graders_endpoint_lists_three_graders() -> None:
+    client = TestClient(create_app())
+    res = client.get("/graders")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["count"] == 3
+    assert len(data["graders"]) == 3
 
 
 def test_grade_works_for_all_tasks() -> None:

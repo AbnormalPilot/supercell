@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from models import ATCAction, ATCObservation, ATCState
 from server.atc_environment import ATCEnvironment
 from server.tasks import list_tasks
+from server.graders import GRADERS
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -132,10 +133,21 @@ def create_app() -> FastAPI:
 
     @app.get("/tasks")
     async def tasks():
-        task_list = list_tasks()
+        return list_tasks()
+
+    @app.get("/graders")
+    async def graders():
         return {
-            "tasks": task_list,
-            "count": len(task_list),
+            "graders": [
+                {
+                    "task_id": task_id,
+                    "id": task_id,
+                    "type": "deterministic",
+                    "endpoint": "/grade",
+                }
+                for task_id in GRADERS.keys()
+            ],
+            "count": len(GRADERS),
         }
 
     # ---- Core OpenEnv endpoints ----
