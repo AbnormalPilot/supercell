@@ -39,6 +39,7 @@ from server.graders import GRADERS
 class ResetRequest(BaseModel):
     seed: Optional[int] = Field(default=None, ge=0)
     episode_id: Optional[str] = Field(default=None, max_length=255)
+    task_id: Optional[str] = Field(default=None, max_length=255)
 
 
 class StepRequest(BaseModel):
@@ -133,7 +134,11 @@ def create_app() -> FastAPI:
 
     @app.get("/tasks")
     async def tasks():
-        return list_tasks()
+        task_list = list_tasks()
+        return {
+            "tasks": task_list,
+            "count": len(task_list),
+        }
 
     @app.get("/graders")
     async def graders():
@@ -156,7 +161,7 @@ def create_app() -> FastAPI:
     @app.post("/reset", response_model=ResetResponse)
     async def reset(req: Optional[ResetRequest] = None):
         seed = req.seed if req else None
-        episode_id = req.episode_id if req else None
+        episode_id = (req.episode_id or req.task_id) if req else None
         obs = env.reset(seed=seed, episode_id=episode_id)
         _initialized["value"] = True
         obs_dict = obs.model_dump()

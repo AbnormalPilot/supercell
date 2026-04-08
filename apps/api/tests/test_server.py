@@ -83,6 +83,12 @@ class TestTasksEndpoint:
         tasks = self._task_list(data)
         assert len(tasks) == 3
 
+    def test_returns_wrapper_with_count(self, client):
+        data = client.get("/tasks").json()
+        assert isinstance(data, dict)
+        assert data["count"] == 3
+        assert len(data["tasks"]) == 3
+
     def test_task_ids(self, client):
         data = client.get("/tasks").json()
         tasks = self._task_list(data)
@@ -124,6 +130,10 @@ class TestResetEndpoint:
     def test_with_seed(self, client):
         data = client.post("/reset", json={"episode_id": "easy", "seed": 42}).json()
         assert data["observation"]["task_id"] == "easy"
+
+    def test_accepts_task_id_alias(self, client):
+        data = client.post("/reset", json={"task_id": "hard"}).json()
+        assert data["observation"]["task_id"] == "hard"
 
 
 # ---------------------------------------------------------------------------

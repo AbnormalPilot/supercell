@@ -27,7 +27,8 @@ class ATCClient:
     def tasks(self) -> list[dict]:
         r = self._http.get("/tasks")
         r.raise_for_status()
-        return r.json()
+        payload = r.json()
+        return payload if isinstance(payload, list) else payload["tasks"]
 
     def reset(self, task_id: str = "easy", seed: int | None = None) -> dict:
         payload: dict = {"episode_id": task_id}

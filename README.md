@@ -310,7 +310,7 @@ The hard task is designed to challenge frontier models — correct solution requ
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/reset` | Start episode: `{"episode_id": "easy"}` |
+| `POST` | `/reset` | Start episode: `{"episode_id": "easy"}` or `{"task_id": "easy"}` |
 | `POST` | `/step` | Take action: `{"action": {"flight_index": 0}}` |
 | `GET` | `/state` | Current episode state |
 | `POST` | `/grade` | Grade completed episode → `score ∈ [0.0, 1.0]` |
