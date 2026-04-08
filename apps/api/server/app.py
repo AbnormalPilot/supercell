@@ -207,8 +207,20 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def main(host: str = "0.0.0.0", port: int = 8000):
-    uvicorn.run("server.app:app", host=host, port=port, reload=False)
+def main(host: str | None = None, port: int | None = None):
+    env_host = os.getenv("HOST", "0.0.0.0")
+    env_port = os.getenv("PORT", "8000")
+
+    resolved_host = host or env_host
+    if port is not None:
+        resolved_port = port
+    else:
+        try:
+            resolved_port = int(env_port)
+        except ValueError:
+            resolved_port = 8000
+
+    uvicorn.run("server.app:app", host=resolved_host, port=resolved_port, reload=False)
 
 
 if __name__ == "__main__":
