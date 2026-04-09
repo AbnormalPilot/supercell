@@ -32,21 +32,21 @@ Built for the **Meta PyTorch OpenEnv Hackathon**.
 # 1. Install deps
 pip install -r requirements.txt          # or: uv sync
 
-# 2. Start the server
-python apps/api/main.py                  # → http://localhost:8000
+# 2. Start the Gradio UI (includes API)
+python app.py                            # → http://localhost:7860
 
 # 3. Run the heuristic demo (no API key needed)
 python demo.py
 
 # 4. Run the hackathon inference script (OpenEnv format)
 export HF_TOKEN="hf_..."
-ENV_URL=http://localhost:8000 SUPERCELL_TASK=hard python inference.py
+ENV_URL=http://localhost:7860 SUPERCELL_TASK=hard python inference.py
 
 # 5. Run tests
 python -m pytest apps/api/tests/ -q     # 213 tests
 ```
 
-The API is fully documented at **http://localhost:8000/docs** (Swagger UI).
+The Gradio UI is at **http://localhost:7860** with integrated API.
 
 ---
 
@@ -69,14 +69,11 @@ Air traffic controllers make life-or-death triage decisions every day — which 
 # Install Python dependencies
 uv sync
 
-# Start the environment server
-uv run python apps/api/main.py
-
-# Start the dashboard (in another terminal)
-pnpm install && pnpm dev
+# Start the Gradio UI (includes API server)
+uv run python app.py
 ```
 
-Open **http://localhost:3000** for the dashboard, **http://localhost:8000/docs** for the API.
+Open **http://localhost:7860** for the Gradio UI with integrated API.
 
 ### Run Inference
 
