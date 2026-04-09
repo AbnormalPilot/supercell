@@ -1,0 +1,452 @@
+/* CSIA Mumbai ATC Theme - Dark Military/Industrial */
+:root {
+    --radar-green: #00ff41;
+    --radar-amber: #ffbf00;
+    --radar-red: #ff3333;
+    --radar-cyan: #00e5ff;
+    --bg-dark: #0a0a0f;
+    --bg-panel: #12121a;
+    --border-color: #2a2a3a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #888;
+    --mumbai-orange: #ff6b35;
+    --mumbai-blue: #0047ab;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: linear-gradient(90deg, var(--bg-panel) 0%, #1a1a2e 100%);
+    border-bottom: 2px solid var(--mumbai-orange);
+}
+
+.logo {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+
+.airport-code {
+    font-size: 32px;
+    font-weight: bold;
+    color: var(--mumbai-orange);
+    text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+    letter-spacing: 4px;
+}
+
+.airport-name {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.status-bar {
+    display: flex;
+    gap: 30px;
+}
+
+.status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 5px 15px;
+    background: rgba(0, 255, 65, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.status-item.alert {
+    background: rgba(255, 51, 51, 0.1);
+    border-color: var(--radar-red);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.status-item .label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: 2px;
+}
+
+.status-item .value {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--radar-green);
+}
+
+.status-item.alert .value {
+    color: var(--radar-red);
+}
+
+/* Main Layout */
+.main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Radar Panel */
+.radar-panel {
+    flex: 1;
+    background: radial-gradient(circle at center, #0f1419 0%, #050508 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
+.radar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.radar-header h3 {
+    color: var(--radar-green);
+    font-size: 14px;
+    letter-spacing: 3px;
+    font-weight: normal;
+}
+
+.radar-freq {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+#radar-canvas {
+    background: radial-gradient(circle at center, 
+        rgba(0, 255, 65, 0.03) 0%, 
+        transparent 70%);
+    border-radius: 50%;
+    box-shadow: 
+        0 0 0 2px var(--border-color),
+        0 0 0 4px rgba(0, 255, 65, 0.1),
+        inset 0 0 100px rgba(0, 255, 65, 0.05);
+    max-width: 100%;
+    max-height: calc(100vh - 250px);
+    margin: 0 auto;
+}
+
+.radar-info {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 15px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--radar-green);
+}
+
+/* Control Panel */
+.control-panel {
+    width: 450px;
+    background: var(--bg-panel);
+    border-left: 2px solid var(--border-color);
+    overflow-y: auto;
+    padding: 15px;
+}
+
+.section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(10, 10, 15, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.section h4 {
+    color: var(--radar-amber);
+    font-size: 12px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Task Buttons */
+.task-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.task-btn {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+    color: var(--text-primary);
+    font-family: inherit;
+}
+
+.task-btn:hover {
+    background: rgba(0, 255, 65, 0.1);
+    border-color: var(--radar-green);
+    transform: translateY(-2px);
+}
+
+.task-btn .level {
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.task-btn .desc {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.task-btn.easy { border-left: 3px solid var(--radar-green); }
+.task-btn.medium { border-left: 3px solid var(--radar-amber); }
+.task-btn.hard { border-left: 3px solid var(--radar-red); }
+.task-btn.chaos { border-left: 3px solid var(--radar-cyan); }
+
+/* Flight Strips */
+.flight-strips {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.strip-placeholder {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 30px;
+    font-style: italic;
+}
+
+.flight-strip {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, rgba(0,0,0,0.3) 0%, transparent 100%);
+    border-left: 3px solid var(--radar-green);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.flight-strip:hover {
+    background: rgba(0, 255, 65, 0.05);
+    transform: translateX(5px);
+}
+
+.flight-strip.mayday { border-left-color: var(--radar-red); animation: blink 1s infinite; }
+.flight-strip.panpan { border-left-color: var(--radar-amber); }
+.flight-strip.cant-land { opacity: 0.5; }
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.strip-index {
+    width: 30px;
+    color: var(--text-secondary);
+}
+
+.strip-callsign {
+    width: 80px;
+    font-weight: bold;
+    color: var(--radar-green);
+}
+
+.strip-type {
+    width: 60px;
+    color: var(--text-secondary);
+}
+
+.strip-emergency {
+    width: 70px;
+}
+
+.strip-fuel {
+    width: 60px;
+    text-align: right;
+}
+
+.strip-pax {
+    width: 50px;
+    text-align: right;
+}
+
+.strip-medical {
+    color: var(--radar-cyan);
+    margin-left: 10px;
+}
+
+/* METAR */
+.metar {
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--radar-green);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+}
+
+.metar .loading {
+    color: var(--text-secondary);
+}
+
+/* Action Controls */
+.action-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.index-input {
+    width: 80px;
+    padding: 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+}
+
+.action-btn {
+    flex: 1;
+    padding: 12px 20px;
+    background: var(--bg-dark);
+    border: 1px solid var(--radar-green);
+    border-radius: 4px;
+    color: var(--radar-green);
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.action-btn:hover {
+    background: var(--radar-green);
+    color: var(--bg-dark);
+    box-shadow: 0 0 20px rgba(0, 255, 65, 0.4);
+}
+
+.action-btn.auto {
+    border-color: var(--radar-cyan);
+    color: var(--radar-cyan);
+}
+
+.action-btn.auto:hover {
+    background: var(--radar-cyan);
+    color: var(--bg-dark);
+}
+
+.action-btn.grade {
+    border-color: var(--radar-amber);
+    color: var(--radar-amber);
+}
+
+.action-btn.grade:hover {
+    background: var(--radar-amber);
+    color: var(--bg-dark);
+}
+
+/* Score */
+.score {
+    font-size: 48px;
+    font-weight: bold;
+    color: var(--radar-green);
+    text-align: center;
+    font-family: monospace;
+    text-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+    margin: 20px 0;
+}
+
+/* Footer Log */
+.footer {
+    height: 150px;
+    background: var(--bg-panel);
+    border-top: 2px solid var(--border-color);
+}
+
+.log-console {
+    height: 100%;
+    overflow-y: auto;
+    padding: 10px 20px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.log-entry {
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.log-entry.system { color: var(--text-secondary); }
+.log-entry.land { color: var(--radar-green); }
+.log-entry.crash { color: var(--radar-red); }
+.log-entry.weather { color: var(--radar-amber); }
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--radar-green);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .control-panel {
+        width: 350px;
+    }
+    
+    .task-buttons {
+        grid-template-columns: 1fr;
+    }
+}

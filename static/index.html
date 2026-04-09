@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSIA Mumbai - ATC Emergency Triage</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="airport-code">CSIA</span>
+                <span class="airport-name">Chhatrapati Shivaji Maharaj International Airport</span>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="label">TASK</span>
+                    <span id="task-name" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">TIME</span>
+                    <span id="time-step" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">WEATHER</span>
+                    <span id="weather-status" class="value">-</span>
+                </div>
+                <div class="status-item alert">
+                    <span class="label">MAYDAY</span>
+                    <span id="mayday-count" class="value">0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Left Panel: Radar -->
+            <div class="radar-panel">
+                <div class="radar-header">
+                    <h3>PRIMARY SURVEILLANCE RADAR</h3>
+                    <span class="radar-freq">1030 MHz | 60 RPM</span>
+                </div>
+                <canvas id="radar-canvas" width="600" height="600"></canvas>
+                <div class="radar-info">
+                    <div class="sweep-angle">SWEEP: <span id="sweep-deg">0°</span></div>
+                    <div class="range-rings">RANGE: 40 NM</div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Controls & Data -->
+            <div class="control-panel">
+                <!-- Task Selection -->
+                <div class="section">
+                    <h4>SCENARIO SELECT</h4>
+                    <div class="task-buttons">
+                        <button onclick="resetTask('easy')" class="task-btn easy">
+                            <span class="level">EASY</span>
+                            <span class="desc">4 Flights | Clear</span>
+                        </button>
+                        <button onclick="resetTask('medium')" class="task-btn medium">
+                            <span class="level">MEDIUM</span>
+                            <span class="desc">7 Flights | Storm</span>
+                        </button>
+                        <button onclick="resetTask('hard')" class="task-btn hard">
+                            <span class="level">HARD</span>
+                            <span class="desc">12 Flights | Crisis</span>
+                        </button>
+                        <button onclick="resetTask('extra_hard')" class="task-btn chaos">
+                            <span class="level">CHAOS</span>
+                            <span class="desc">20 Flights | System Failure</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Flight Strips -->
+                <div class="section">
+                    <h4>FLIGHT STRIPS</h4>
+                    <div id="flight-strips" class="flight-strips">
+                        <div class="strip-placeholder">Select a scenario to begin</div>
+                    </div>
+                </div>
+
+                <!-- Weather Panel -->
+                <div class="section">
+                    <h4>METAR - VABB</h4>
+                    <div id="metar-display" class="metar">
+                        <span class="loading">Waiting for weather data...</span>
+                    </div>
+                </div>
+
+                <!-- Action Panel -->
+                <div class="section action-section">
+                    <h4>ATC ACTIONS</h4>
+                    <div class="action-controls">
+                        <input type="number" id="flight-index" min="0" placeholder="Flight Index" class="index-input">
+                        <button onclick="landFlight()" class="action-btn land">
+                            🛬 CLEAR TO LAND
+                        </button>
+                        <button onclick="autoLand()" class="action-btn auto">
+                            🤖 AUTO TRIAGE
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Score -->
+                <div class="section">
+                    <h4>EPISODE SCORE</h4>
+                    <div id="score-display" class="score">-</div>
+                    <button onclick="gradeEpisode()" class="action-btn grade">
+                        📊 GRADE
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="log-console" id="event-log">
+                <div class="log-entry system">System initialized. Waiting for scenario selection...</div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/radar.js"></script>
+</body>
+</html>

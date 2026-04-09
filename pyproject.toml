@@ -9,20 +9,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pydantic>=2.10.0",
-    "httpx>=0.28.0",
-    "openai>=1.60.0",
-    "openenv-core>=0.2.0",
-    "matplotlib>=3.10.8",
-    "fpdf2>=2.8.7",
-    "pillow>=12.1.1",
-    "edge-tts>=7.2.8",
-    "transformers>=4.44.0",
-    "huggingface_hub>=0.25.0",
-    "gradio>=5.0.0",
+    "python-multipart>=0.0.6",
 ]
 
 [project.scripts]
-server = "server.app:main"
 app = "app:create_app"
 
 [build-system]

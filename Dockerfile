@@ -1,6 +1,6 @@
 # ================================================================
-# SUPERCELL — Hugging Face Spaces Dockerfile (Python-Only)
-# Pure Python Gradio UI + FastAPI backend
+# SUPERCELL — CSIA Mumbai ATC (Python-Only)
+# Custom UI with animated radar simulation
 # HF Spaces expects port 7860 by default
 # ================================================================
 
@@ -27,11 +27,12 @@ COPY graders.py ./
 COPY environment.py ./
 COPY openenv.yaml ./
 
+# Copy static files (custom UI)
+COPY static/ ./static/
+
 # HF Spaces uses port 7860
 ENV PYTHONUNBUFFERED=1
 ENV PORT=7860
-ENV GRADIO_SERVER_NAME=0.0.0.0
-ENV GRADIO_SERVER_PORT=7860
 
 EXPOSE 7860
 
