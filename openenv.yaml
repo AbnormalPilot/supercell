@@ -9,6 +9,20 @@ description: "SUPERCELL — AI-powered air traffic control emergency triage. Pri
 action: ATCAction
 observation: ATCObservation
 
+graders:
+  - id: easy
+    type: deterministic
+    endpoint: /grade
+    scoring_range: [0.0, 1.0]
+  - id: medium
+    type: deterministic
+    endpoint: /grade
+    scoring_range: [0.0, 1.0]
+  - id: hard
+    type: deterministic
+    endpoint: /grade
+    scoring_range: [0.0, 1.0]
+
 tasks:
   - id: easy
     name: "Clear Skies Priority"
@@ -17,6 +31,7 @@ tasks:
       id: easy
       type: deterministic
       endpoint: /grade
+      scoring_range: [0.0, 1.0]
 
   - id: medium
     name: "Storm Window"
@@ -25,6 +40,7 @@ tasks:
       id: medium
       type: deterministic
       endpoint: /grade
+      scoring_range: [0.0, 1.0]
 
   - id: hard
     name: "Mass Diversion Crisis"
@@ -33,3 +49,4 @@ tasks:
       id: hard
       type: deterministic
       endpoint: /grade
+      scoring_range: [0.0, 1.0]
