@@ -169,6 +169,46 @@ def grade_hard(
     )
 
 
+def grade_extra_hard(
+    landing_log: list[dict],
+    crash_log: list[dict],
+    total_flights: int,
+    steps_used: int,
+    max_steps: int,
+) -> float:
+    """Extra hard task grader.
+
+    Weights: safety 25%, priority 20%, medical 15%, fuel 25%, efficiency 10%, bonus 5%.
+    Extra strict fuel penalties and lower tolerances for errors.
+    """
+    safety = len(landing_log) / total_flights if total_flights > 0 else 0.0
+    priority = _priority_score(landing_log, total_flights)
+    medical = _medical_score(landing_log)
+    fuel = _fuel_management_score(landing_log, crash_log)
+    optimal = total_flights
+    efficiency = min(1.0, optimal / steps_used) if steps_used > 0 else 0.0
+
+    # Bonus: extra credit for zero crashes with all flights landed
+    bonus = 1.0 if (len(crash_log) == 0 and len(landing_log) == total_flights) else 0.0
+
+    # Penalty for exceeding step budget
+    step_penalty = 0.0
+    if steps_used > max_steps:
+        step_penalty = min(0.2, (steps_used - max_steps) / max_steps)
+
+    score = round(
+        0.25 * safety
+        + 0.20 * priority
+        + 0.15 * medical
+        + 0.25 * fuel
+        + 0.10 * efficiency
+        + 0.05 * bonus,
+        4,
+    )
+
+    return max(0.0, score - step_penalty)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -177,6 +217,7 @@ GRADERS = {
     "easy": grade_easy,
     "medium": grade_medium,
     "hard": grade_hard,
+    "extra_hard": grade_extra_hard,
 }
 
 

@@ -22,6 +22,10 @@ graders:
     type: deterministic
     endpoint: /grade
     scoring_range: [0.0, 1.0]
+  - id: extra_hard
+    type: deterministic
+    endpoint: /grade
+    scoring_range: [0.0, 1.0]
 
 tasks:
   - id: easy
@@ -47,6 +51,15 @@ tasks:
     description: "12 aircraft diverted with three MAYDAYs, two PAN-PANs, fuel traps, and oscillating weather."
     grader:
       id: hard
+      type: deterministic
+      endpoint: /grade
+      scoring_range: [0.0, 1.0]
+
+  - id: extra_hard
+    name: "Total System Chaos"
+    description: "20 aircraft in a total system failure scenario. Five MAYDAYs with fuel critical (<8 min), four PAN-PANs with medical emergencies, VFR aircraft that need 4-5nm visibility, and extreme weather volatility."
+    grader:
+      id: extra_hard
       type: deterministic
       endpoint: /grade
       scoring_range: [0.0, 1.0]
