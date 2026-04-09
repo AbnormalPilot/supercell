@@ -2,10 +2,10 @@ spec_version: 1
 name: supercell
 type: space
 runtime: fastapi
-app: apps.api.server.app:app
-port: 8000
+app: app:create_app
+port: 7860
 version: "1.0.0"
-description: "SUPERCELL — AI-powered air traffic control emergency triage. Prioritize landing order under fuel, weather, and emergency constraints."
+description: "SUPERCELL — Simplified ATC emergency triage for Meta PyTorch Hackathon."
 action: ATCAction
 observation: ATCObservation
 

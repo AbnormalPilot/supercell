@@ -19,10 +19,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 
-# Copy application code
-COPY apps/api ./apps/api
-COPY openenv.yaml ./
+# Copy application code (flat structure)
 COPY app.py ./
+COPY models.py ./
+COPY tasks.py ./
+COPY graders.py ./
+COPY environment.py ./
+COPY openenv.yaml ./
 
 # HF Spaces uses port 7860
 ENV PYTHONUNBUFFERED=1

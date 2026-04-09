@@ -43,10 +43,22 @@ export HF_TOKEN="hf_..."
 ENV_URL=http://localhost:7860 SUPERCELL_TASK=hard python inference.py
 
 # 5. Run tests
-python -m pytest apps/api/tests/ -q     # 213 tests
+python -m pytest tests/ -q              # Tests in flat structure
 ```
 
 The Gradio UI is at **http://localhost:7860** with integrated API.
+
+### File Structure (Simplified)
+
+```
+├── app.py              # Main entry: FastAPI + Gradio UI
+├── models.py           # Data models (dataclasses)
+├── environment.py      # ATCEnvironment logic
+├── tasks.py            # Task scenarios (easy/medium/hard/extra_hard)
+├── graders.py          # Grading functions
+├── openenv.yaml        # OpenEnv specification
+└── Dockerfile          # HF Spaces deployment
+```
 
 ---
 
