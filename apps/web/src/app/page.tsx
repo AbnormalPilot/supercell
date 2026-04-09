@@ -311,6 +311,9 @@ export default function ATCDashboard() {
         case "3":
           handleReset("hard");
           break;
+        case "4":
+          handleReset("extra_hard");
+          break;
       }
     }
 
@@ -457,7 +460,7 @@ export default function ATCDashboard() {
         </span>
         <span className="text-[8px] text-[var(--color-radar-text)] uppercase tracking-widest">
           <kbd className="px-1 py-0.5 bg-[var(--color-radar-bg)] rounded text-[var(--color-radar-text-secondary)] border border-[var(--color-radar-border)]">
-            1-3
+            1-4
           </kbd>{" "}
           Task
         </span>

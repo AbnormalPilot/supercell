@@ -22,6 +22,8 @@ function taskColor(taskId: string): string {
       return "var(--color-radar-amber)";
     case "hard":
       return "var(--color-radar-red)";
+    case "extra_hard":
+      return "var(--color-radar-cyan)";
     default:
       return "var(--color-radar-text)";
   }
@@ -35,6 +37,8 @@ function taskBgColor(taskId: string): string {
       return "rgba(255, 191, 0, 0.1)";
     case "hard":
       return "rgba(255, 51, 51, 0.1)";
+    case "extra_hard":
+      return "rgba(0, 229, 255, 0.1)";
     default:
       return "rgba(106, 125, 141, 0.1)";
   }
@@ -48,6 +52,8 @@ function taskBorderColor(taskId: string): string {
       return "rgba(255, 191, 0, 0.25)";
     case "hard":
       return "rgba(255, 51, 51, 0.25)";
+    case "extra_hard":
+      return "rgba(0, 229, 255, 0.25)";
     default:
       return "rgba(106, 125, 141, 0.25)";
   }

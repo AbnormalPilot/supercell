@@ -36,6 +36,7 @@ const TASKS: { id: TaskId; label: string; flights: string; color: string }[] = [
   { id: "easy", label: "EASY", flights: "4 FLT", color: "var(--color-radar-green)" },
   { id: "medium", label: "MED", flights: "7 FLT", color: "var(--color-radar-amber)" },
   { id: "hard", label: "HARD", flights: "12 FLT", color: "var(--color-radar-red)" },
+  { id: "extra_hard", label: "MAX", flights: "20 FLT", color: "var(--color-radar-cyan)" },
 ];
 
 const SPEEDS = [

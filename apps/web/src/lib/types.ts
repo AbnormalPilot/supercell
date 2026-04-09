@@ -74,7 +74,7 @@ export interface LogEntry {
   detail?: string;
 }
 
-export type TaskId = "easy" | "medium" | "hard";
+export type TaskId = "easy" | "medium" | "hard" | "extra_hard";
 
 export interface TaskInfo {
   task_id: string;
