@@ -540,6 +540,27 @@
         return new Promise((res) => setTimeout(res, ms));
     }
 
+    /**
+     * Run the heuristic loop until the episode terminates. Does NOT grade at
+     * the end — callers decide when to fetch the score. Pure play loop.
+     */
+    async function playAutoLoop() {
+        while (
+            autoPlaying
+            && observation
+            && !observation.done
+            && observation.flights.length > 0
+        ) {
+            const i = bestDefaultIndex();
+            if (i === null) break;
+            selectFlight(i);
+            await clearToLand();
+            if (!observation.done) {
+                await sleep(AUTO_STEP_DELAY_MS);
+            }
+        }
+    }
+
     async function autoTriage() {
         // Second click → stop the running loop.
         if (autoPlaying) {
@@ -557,21 +578,7 @@
         logLine("[SYSTEM] Auto triage engaged — heuristic agent flying the tower.", "sys");
 
         try {
-            while (
-                autoPlaying
-                && observation
-                && !observation.done
-                && observation.flights.length > 0
-            ) {
-                const i = bestDefaultIndex();
-                if (i === null) break;
-                selectFlight(i);
-                await clearToLand();
-                // Pause between steps so the log is readable.
-                if (!observation.done) {
-                    await sleep(AUTO_STEP_DELAY_MS);
-                }
-            }
+            await playAutoLoop();
         } finally {
             autoPlaying = false;
             setAutoButton("Auto Triage");
@@ -580,29 +587,21 @@
         // Auto-grade at the end so the final score is shown without extra clicks.
         if (observation && observation.done) {
             logLine("[SYSTEM] Episode complete — computing final score.", "sys");
-            await gradeEpisode();
+            await fetchAndLogGrade();
         }
     }
 
-    async function gradeEpisode() {
+    /**
+     * Fetch the score from /grade and log it. Does not play any steps —
+     * callers should ensure the episode is played before calling if they
+     * want a meaningful score.
+     */
+    async function fetchAndLogGrade() {
         try {
             // /grade is a POST endpoint — pass {} so api() sends POST, not GET.
             const data = await api("/grade", {});
             const el = document.getElementById("score-display");
             if (el) el.textContent = data.score.toFixed(3);
-
-            const noOp =
-                data.landing_log.length === 0
-                && data.crash_log.length === 0
-                && (data.steps_used || 0) === 0;
-
-            if (noOp) {
-                logLine(
-                    "[SYSTEM] No steps played yet on this episode. " +
-                    "Press Clear to Land, Auto Triage, or Space/Enter to play.",
-                    "sys"
-                );
-            }
 
             logLine(
                 `[SCORE] ${data.task_id.toUpperCase()} · ${data.score.toFixed(3)} · ` +
@@ -613,6 +612,51 @@
         } catch (e) {
             logLine(`[ERROR] ${e.message}`, "crash");
         }
+    }
+
+    /**
+     * Grade Episode button handler.
+     *
+     * - If no scenario has been loaded: tell the user.
+     * - If the episode is fresh (no steps taken yet): auto-play with the
+     *   heuristic, then grade. Matches the user's mental model of "click
+     *   and see the score".
+     * - If the episode has been partially played manually: grade the
+     *   current state without continuing auto-play.
+     * - If the episode is already done: just grade it.
+     */
+    async function gradeEpisode() {
+        if (!observation) {
+            logLine("[SYSTEM] No scenario loaded. Pick one on the left first.", "sys");
+            return;
+        }
+
+        const fresh = !observation.done && observation.time_step === 0;
+        if (fresh) {
+            // Episode is un-played — run auto triage to completion first,
+            // then fall through to grading.
+            if (autoPlaying) {
+                // Already running; just wait for it to finish by returning.
+                return;
+            }
+            autoPlaying = true;
+            setAutoButton("Stop Auto");
+            logLine("[SYSTEM] No steps played yet — running heuristic agent to completion.", "sys");
+            try {
+                await playAutoLoop();
+            } finally {
+                autoPlaying = false;
+                setAutoButton("Auto Triage");
+            }
+            if (!observation || !observation.done) {
+                // User stopped the loop early — grade the partial state anyway.
+                logLine("[SYSTEM] Auto triage stopped before completion.", "sys");
+            } else {
+                logLine("[SYSTEM] Episode complete — computing final score.", "sys");
+            }
+        }
+
+        await fetchAndLogGrade();
     }
 
     // ---------- Wiring ----------
