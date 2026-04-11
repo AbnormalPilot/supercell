@@ -19,15 +19,17 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 
-# Copy application code (flat structure)
+# Copy application code (flat root + server/ package for openenv validate)
 COPY app.py ./
 COPY models.py ./
 COPY tasks.py ./
 COPY graders.py ./
 COPY environment.py ./
+COPY inference.py ./
 COPY openenv.yaml ./
+COPY server/ ./server/
 
-# Copy static files (custom UI)
+# Copy static files (Monsoon Mumbai tower UI)
 COPY static/ ./static/
 
 # HF Spaces uses port 7860

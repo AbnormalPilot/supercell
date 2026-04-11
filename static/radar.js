@@ -1,389 +1,555 @@
-/**
- * CSIA Mumbai ATC Radar Simulation
- * Animated radar with flight tracking and API integration
- */
+/* =====================================================================
+ * SUPERCELL — VABB Mumbai Tower (Apple-system edition)
+ *
+ * Canvas radar + UI controller. Uses a restrained Apple-tone palette:
+ * navy background, white outlines, Apple Blue for normal traffic,
+ * red for MAYDAY, amber for PAN-PAN. No phosphor bloom.
+ * ================================================================== */
 
-// Global state
-let currentState = null;
-let radarAngle = 0;
-let flights = [];
-let animationId = null;
-let sweepSpeed = 2; // degrees per frame
+(function () {
+    "use strict";
 
-// DOM Elements
-const canvas = document.getElementById('radar-canvas');
-const ctx = canvas.getContext('2d');
-const sweepDegEl = document.getElementById('sweep-deg');
-const taskNameEl = document.getElementById('task-name');
-const timeStepEl = document.getElementById('time-step');
-const weatherStatusEl = document.getElementById('weather-status');
-const maydayCountEl = document.getElementById('mayday-count');
-const flightStripsEl = document.getElementById('flight-strips');
-const metarEl = document.getElementById('metar-display');
-const scoreEl = document.getElementById('score-display');
-const eventLogEl = document.getElementById('event-log');
+    // ---------- Canvas + geometry ----------
+    const canvas = document.getElementById("radar-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    const CX = W / 2;
+    const CY = H / 2;
+    const RADAR_R = Math.min(W, H) / 2 - 24;
+    const RANGE_NM = 40;
 
-// API Client
-const API_BASE = '';
+    const COLOR_RING    = "rgba(255, 255, 255, 0.18)";
+    const COLOR_RING_2  = "rgba(255, 255, 255, 0.10)";
+    const COLOR_TEXT    = "rgba(255, 255, 255, 0.55)";
+    const COLOR_TEXT_BR = "#ffffff";
+    const COLOR_RUNWAY  = "#ffffff";
+    const COLOR_FIX     = "#7a9cff";
+    const COLOR_NORMAL  = "#2997ff"; // bright blue (Apple dark-bg link)
+    const COLOR_PANPAN  = "#ffb020";
+    const COLOR_MAYDAY  = "#ff453a";
+    const COLOR_SELECT  = "#ffd60a";
+    const COLOR_SWEEP   = "rgba(255, 255, 255, 0.22)";
 
-async function apiPost(endpoint, payload = {}) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    return response.json();
-}
+    // VABB STAR fix geometry (approximate bearings from airport)
+    const FIXES = [
+        { name: "PARAR", bearing: 90,  nm: 32 },
+        { name: "GUDOM", bearing: 45,  nm: 35 },
+        { name: "NOMUS", bearing: 135, nm: 34 },
+        { name: "LEKIT", bearing: 315, nm: 32 },
+    ];
 
-async function apiGet(endpoint) {
-    const response = await fetch(`${API_BASE}${endpoint}`);
-    return response.json();
-}
+    // VABB runways: 09/27 (primary), 14/32 (crossing secondary)
+    const RUNWAYS = [
+        { headingDeg: 90,  lengthNm: 2.1, primary: true  },
+        { headingDeg: 135, lengthNm: 1.7, primary: false },
+    ];
 
-// Initialize
-function init() {
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-    startRadarAnimation();
-    log('System initialized. Select a scenario to begin.', 'system');
-}
+    // ---------- State ----------
+    let sweepAngle = -Math.PI / 2;
+    let observation = null;
+    let taskId = null;
+    let selectedIndex = null;
+    let prevCrashed = 0;
+    const trails = new Map();
 
-function resizeCanvas() {
-    const container = canvas.parentElement;
-    const size = Math.min(container.clientWidth - 40, container.clientHeight - 100, 600);
-    canvas.width = size;
-    canvas.height = size;
-}
-
-// Radar Animation
-function startRadarAnimation() {
-    function animate() {
-        drawRadar();
-        radarAngle = (radarAngle + sweepSpeed) % 360;
-        sweepDegEl.textContent = `${Math.floor(radarAngle)}°`;
-        animationId = requestAnimationFrame(animate);
+    function polarToXY(bearingDeg, nm) {
+        const rad = ((bearingDeg - 90) * Math.PI) / 180;
+        const r = (nm / RANGE_NM) * RADAR_R;
+        return { x: CX + Math.cos(rad) * r, y: CY + Math.sin(rad) * r };
     }
-    animate();
-}
 
-function drawRadar() {
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) - 20;
-    
-    // Clear canvas
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw grid circles
-    ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)';
-    ctx.lineWidth = 1;
-    
-    for (let i = 1; i <= 4; i++) {
+    function zuluClock() {
+        const d = new Date();
+        const p = (n) => String(n).padStart(2, "0");
+        return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+    }
+
+    // ---------- Rendering ----------
+    function drawBackground() {
+        ctx.clearRect(0, 0, W, H);
+
+        // Outer ring
+        ctx.strokeStyle = COLOR_RING;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius * i / 4, 0, Math.PI * 2);
+        ctx.arc(CX, CY, RADAR_R, 0, Math.PI * 2);
         ctx.stroke();
-    }
-    
-    // Draw crosshairs
-    ctx.beginPath();
-    ctx.moveTo(centerX - radius, centerY);
-    ctx.lineTo(centerX + radius, centerY);
-    ctx.moveTo(centerX, centerY - radius);
-    ctx.lineTo(centerX, centerY + radius);
-    ctx.stroke();
-    
-    // Draw angle markers
-    ctx.fillStyle = 'rgba(0, 255, 65, 0.5)';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'center';
-    
-    const angles = [0, 45, 90, 135, 180, 225, 270, 315];
-    angles.forEach(deg => {
-        const rad = (deg - 90) * Math.PI / 180;
-        const x = centerX + (radius + 15) * Math.cos(rad);
-        const y = centerY + (radius + 15) * Math.sin(rad);
-        ctx.fillText(deg.toString().padStart(3, '0'), x, y + 3);
-    });
-    
-    // Draw range rings labels
-    ctx.fillStyle = 'rgba(0, 255, 65, 0.4)';
-    [10, 20, 30, 40].forEach((range, i) => {
-        const y = centerY - radius * (i + 1) / 4;
-        ctx.fillText(`${range}nm`, centerX + 5, y - 2);
-    });
-    
-    // Draw flights
-    if (currentState && currentState.observation) {
-        drawFlights(centerX, centerY, radius);
-    }
-    
-    // Draw radar sweep
-    const sweepRad = (radarAngle - 90) * Math.PI / 180;
-    const grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-    grad.addColorStop(0, 'rgba(0, 255, 65, 0)');
-    grad.addColorStop(0.8, 'rgba(0, 255, 65, 0.1)');
-    grad.addColorStop(1, 'rgba(0, 255, 65, 0.3)');
-    
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate(sweepRad);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, radius, -0.3, 0.3);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.restore();
-    
-    // Draw center dot
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#00ff41';
-    ctx.fill();
-}
 
-function drawFlights(centerX, centerY, radius) {
-    const flights = currentState.observation.flights || [];
-    const weather = currentState.observation.weather || {};
-    
-    flights.forEach((flight, idx) => {
-        // Calculate position based on distance and bearing
-        const distance = flight.distance_nm || 20;
-        const bearing = (idx * 137.5) % 360; // Golden angle distribution
-        const rad = (bearing - 90) * Math.PI / 180;
-        const r = (distance / 40) * radius;
-        
-        const x = centerX + r * Math.cos(rad);
-        const y = centerY + r * Math.sin(rad);
-        
-        // Determine color based on emergency
-        let color = '#00ff41';
-        let size = 6;
-        let pulse = false;
-        
-        if (flight.emergency === 'MAYDAY') {
-            color = '#ff3333';
-            size = 10;
-            pulse = true;
-        } else if (flight.emergency === 'PAN_PAN') {
-            color = '#ffbf00';
-            size = 8;
-        }
-        
-        // Draw blip
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-        
-        // Pulse effect for emergencies
-        if (pulse) {
-            const pulseSize = size + Math.sin(Date.now() / 200) * 4;
+        // Range rings — three dashed concentric rings
+        ctx.strokeStyle = COLOR_RING_2;
+        ctx.setLineDash([2, 5]);
+        for (let i = 1; i < 4; i++) {
             ctx.beginPath();
-            ctx.arc(x, y, Math.abs(pulseSize), 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(255, 51, 51, ${0.5 + Math.sin(Date.now() / 200) * 0.3})`;
-            ctx.lineWidth = 2;
+            ctx.arc(CX, CY, (RADAR_R * i) / 4, 0, Math.PI * 2);
             ctx.stroke();
         }
-        
-        // Draw callsign
-        ctx.fillStyle = color;
-        ctx.font = '11px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(flight.callsign, x + 10, y + 3);
-        
-        // Draw fuel indicator if low
-        if (flight.fuel_minutes < 10) {
-            ctx.fillStyle = '#ff3333';
-            ctx.fillText(`⚡${flight.fuel_minutes.toFixed(0)}`, x + 10, y + 15);
+        ctx.setLineDash([]);
+
+        // Crosshairs
+        ctx.strokeStyle = COLOR_RING_2;
+        ctx.beginPath();
+        ctx.moveTo(CX - RADAR_R, CY);
+        ctx.lineTo(CX + RADAR_R, CY);
+        ctx.moveTo(CX, CY - RADAR_R);
+        ctx.lineTo(CX, CY + RADAR_R);
+        ctx.stroke();
+
+        // Compass labels
+        ctx.fillStyle = COLOR_TEXT;
+        ctx.font = "11px 'SF Pro Text', monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("N", CX, CY - RADAR_R - 10);
+        ctx.fillText("S", CX, CY + RADAR_R + 10);
+        ctx.textAlign = "left";
+        ctx.fillText("E", CX + RADAR_R + 8, CY);
+        ctx.textAlign = "right";
+        ctx.fillText("W", CX - RADAR_R - 8, CY);
+
+        // Range ring labels
+        ctx.textAlign = "left";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+        ctx.font = "9px 'SF Mono', monospace";
+        for (let i = 1; i <= 4; i++) {
+            const nm = (RANGE_NM * i) / 4;
+            ctx.fillText(`${nm.toFixed(0)}NM`, CX + 4, CY - (RADAR_R * i) / 4);
+        }
+    }
+
+    function drawRunways() {
+        RUNWAYS.forEach((rw) => {
+            const halfLen = (rw.lengthNm / RANGE_NM) * RADAR_R;
+            const rad = ((rw.headingDeg - 90) * Math.PI) / 180;
+            const dx = Math.cos(rad) * halfLen;
+            const dy = Math.sin(rad) * halfLen;
+            ctx.strokeStyle = rw.primary
+                ? COLOR_RUNWAY
+                : "rgba(255, 255, 255, 0.35)";
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(CX - dx, CY - dy);
+            ctx.lineTo(CX + dx, CY + dy);
+            ctx.stroke();
+        });
+
+        // Airport marker — small filled square
+        ctx.fillStyle = COLOR_RUNWAY;
+        ctx.fillRect(CX - 3, CY - 3, 6, 6);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+        ctx.font = "10px 'SF Pro Text', monospace";
+        ctx.textAlign = "left";
+        ctx.fillText("VABB", CX + 8, CY + 16);
+    }
+
+    function drawFixes() {
+        FIXES.forEach((f) => {
+            const p = polarToXY(f.bearing, f.nm);
+
+            // Airway from fix → airport
+            ctx.setLineDash([1, 4]);
+            ctx.strokeStyle = "rgba(122, 156, 255, 0.18)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(CX, CY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Triangle waypoint
+            ctx.strokeStyle = COLOR_FIX;
+            ctx.fillStyle = "rgba(122, 156, 255, 0.16)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y - 5);
+            ctx.lineTo(p.x + 5, p.y + 4);
+            ctx.lineTo(p.x - 5, p.y + 4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "rgba(122, 156, 255, 0.9)";
+            ctx.font = "10px 'SF Pro Text', monospace";
+            ctx.textAlign = "center";
+            ctx.fillText(f.name, p.x, p.y + 16);
+        });
+    }
+
+    function drawSweep() {
+        // Soft wedge sweep — minimal, no neon bloom
+        const span = 0.5;
+        const grad = ctx.createConicGradient(sweepAngle, CX, CY);
+        grad.addColorStop(0, COLOR_SWEEP);
+        grad.addColorStop(span / (Math.PI * 2), "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.arc(CX, CY, RADAR_R, sweepAngle, sweepAngle + span);
+        ctx.closePath();
+        ctx.fill();
+
+        // Leading edge line
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.lineTo(
+            CX + Math.cos(sweepAngle) * RADAR_R,
+            CY + Math.sin(sweepAngle) * RADAR_R
+        );
+        ctx.stroke();
+    }
+
+    function drawFlights() {
+        if (!observation || !observation.flights) return;
+        observation.flights.forEach((f, i) => {
+            const bearing = typeof f.bearing_deg === "number" ? f.bearing_deg : 90;
+            const nm = Math.min(RANGE_NM - 2, Math.max(4, f.distance_nm || 20));
+            const p = polarToXY(bearing, nm);
+
+            // Short trail — 6 recent positions
+            const trail = trails.get(f.callsign) || [];
+            trail.push(p);
+            if (trail.length > 6) trail.shift();
+            trails.set(f.callsign, trail);
+
+            for (let t = 0; t < trail.length - 1; t++) {
+                const a = (t / trail.length) * 0.3;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${a})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(trail[t].x, trail[t].y);
+                ctx.lineTo(trail[t + 1].x, trail[t + 1].y);
+                ctx.stroke();
+            }
+
+            // Blip colour by priority
+            let color = COLOR_NORMAL;
+            if (f.emergency === "MAYDAY") color = COLOR_MAYDAY;
+            else if (f.emergency === "PAN_PAN") color = COLOR_PANPAN;
+
+            // Blip
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, i === selectedIndex ? 5.5 : 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Selection ring
+            if (i === selectedIndex) {
+                ctx.strokeStyle = COLOR_SELECT;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Data block
+            const lx = p.x + 9;
+            const ly = p.y - 9;
+            ctx.font = "10px 'SF Pro Text', monospace";
+            ctx.fillStyle = color;
+            ctx.textAlign = "left";
+            ctx.fillText(f.callsign, lx, ly);
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+            ctx.font = "9px 'SF Pro Text', monospace";
+            ctx.fillText(
+                `${Math.round(f.fuel_minutes)}F · ${Math.round(nm)}NM`,
+                lx,
+                ly + 10
+            );
+        });
+    }
+
+    function render() {
+        drawBackground();
+        drawFixes();
+        drawRunways();
+        drawFlights();
+        drawSweep();
+
+        sweepAngle += 0.022;
+        if (sweepAngle > Math.PI * 2) sweepAngle -= Math.PI * 2;
+
+        const deg = Math.round(((sweepAngle * 180) / Math.PI + 90 + 360) % 360);
+        const el = document.getElementById("sweep-deg");
+        if (el) el.textContent = String(deg).padStart(3, "0") + "°";
+
+        requestAnimationFrame(render);
+    }
+
+    // ---------- UI updaters ----------
+    function renderStrips() {
+        const stack = document.getElementById("flight-strips");
+        const count = document.getElementById("strip-count");
+        if (!stack) return;
+
+        if (!observation || !observation.flights || observation.flights.length === 0) {
+            stack.innerHTML = '<div class="sk-strip-empty">No inbound traffic.</div>';
+            if (count) count.textContent = "0 airborne";
+            return;
+        }
+        if (count) count.textContent = `${observation.flights.length} airborne`;
+
+        stack.innerHTML = "";
+        observation.flights.forEach((f, i) => {
+            const div = document.createElement("div");
+            const classes = ["sk-strip"];
+            if (f.emergency === "MAYDAY") classes.push("mayday");
+            if (f.emergency === "PAN_PAN") classes.push("panpan");
+            if (!f.can_land_now) classes.push("blocked");
+            if (i === selectedIndex) classes.push("selected");
+            div.className = classes.join(" ");
+
+            const fuelClass =
+                f.fuel_minutes < 5 ? "critical" :
+                f.fuel_minutes < 10 ? "low" : "";
+
+            let tag = "";
+            if (f.emergency === "MAYDAY") {
+                tag = '<span class="sk-strip-tag sk-strip-tag-mayday">MAYDAY</span>';
+            } else if (f.emergency === "PAN_PAN") {
+                tag = '<span class="sk-strip-tag sk-strip-tag-panpan">PAN-PAN</span>';
+            }
+            const medTag = f.medical_onboard
+                ? '<span class="sk-strip-tag sk-strip-tag-med">MED</span>'
+                : "";
+
+            div.innerHTML = `
+                <div class="sk-strip-idx">${i}</div>
+                <div>
+                    <div class="sk-strip-callsign">${f.callsign} ${tag}${medTag}</div>
+                    <div class="sk-strip-sub">
+                        ${f.aircraft_type} · ${f.approach_fix || "—"} ·
+                        ${Math.round(f.distance_nm)} NM ·
+                        ${f.can_land_now ? "clear" : "blocked"}
+                    </div>
+                </div>
+                <div class="sk-strip-right">
+                    <div class="sk-strip-fuel ${fuelClass}">${Math.round(f.fuel_minutes)}m</div>
+                    <div>pax ${f.passengers}</div>
+                </div>
+            `;
+            div.addEventListener("click", () => selectFlight(i));
+            stack.appendChild(div);
+        });
+    }
+
+    function updateStatus() {
+        if (!observation) return;
+        const g = (id) => document.getElementById(id);
+        const set = (id, v) => { const el = g(id); if (el) el.textContent = v; };
+
+        set("task-name", (observation.task_name || observation.task_id || "—"));
+        set("time-step", `${String(observation.time_step).padStart(2, "0")} / ${String(observation.max_time_steps).padStart(2, "0")}`);
+        set("vis-value", `${observation.weather.visibility_nm.toFixed(1)} nm`);
+        set("wind-value", `${Math.round(observation.weather.wind_knots)} kt`);
+        set("mayday-count", observation.flights.filter((f) => f.emergency === "MAYDAY").length);
+        set("landed-count", observation.landed_safely);
+        set("crashed-count", observation.crashed);
+        set("episode-reward", (observation.episode_reward ?? 0).toFixed(1));
+
+        // METAR-style weather line
+        const w = observation.weather;
+        const visMeters = Math.round(w.visibility_nm * 1852);
+        const metar =
+            `METAR VABB ${zuluClock().replace(/:/g, "").slice(0, 4)}Z ` +
+            `24012KT ${String(visMeters).padStart(4, "0")}M ` +
+            `${(w.precipitation || "").toUpperCase()} ` +
+            `BKN${Math.round(w.ceiling_feet / 100)} TREND ${(w.trend || "").toUpperCase()}`;
+        set("metar-line", metar);
+    }
+
+    function selectFlight(i) {
+        selectedIndex = i;
+        const f = observation && observation.flights[i];
+        const el = document.getElementById("selected-flight");
+        if (el) el.textContent = f ? f.callsign : "—";
+        renderStrips();
+    }
+
+    // ---------- Event log ----------
+    function logLine(text, cls) {
+        const log = document.getElementById("event-log");
+        if (!log) return;
+        const line = document.createElement("div");
+        line.className = "sk-log-line " + (cls ? "sk-log-" + cls : "");
+        line.textContent = text;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+        while (log.childElementCount > 80) log.removeChild(log.firstChild);
+    }
+
+    // ---------- API ----------
+    async function api(path, body) {
+        const opt = {
+            method: body ? "POST" : "GET",
+            headers: { "Content-Type": "application/json" },
+        };
+        if (body) opt.body = JSON.stringify(body);
+        const res = await fetch(path, opt);
+        if (!res.ok) throw new Error(`${path} → ${res.status}`);
+        return res.json();
+    }
+
+    async function resetTask(id) {
+        taskId = id;
+        selectedIndex = null;
+        trails.clear();
+        prevCrashed = 0;
+        try {
+            const data = await api("/reset", { episode_id: id });
+            observation = data.observation;
+            document.querySelectorAll(".sk-scenario-row").forEach((b) =>
+                b.classList.toggle("active", b.dataset.task === id)
+            );
+            logLine(
+                `[SYSTEM] ${observation.task_name} loaded · ${observation.total_flights} inbound`,
+                "sys"
+            );
+            logLine(
+                `[TWR] All aircraft on approach, expect vectors for ILS RWY 27. Current vis ${observation.weather.visibility_nm.toFixed(1)} nm.`,
+                "tower"
+            );
+            observation.flights.forEach((f) => {
+                if (f.emergency === "MAYDAY") {
+                    logLine(
+                        `[${f.callsign}] MAYDAY MAYDAY MAYDAY. Fuel critical ${Math.round(f.fuel_minutes)} minutes. Request immediate landing.`,
+                        "alert"
+                    );
+                }
+            });
+            renderStrips();
+            updateStatus();
+        } catch (e) {
+            logLine(`[ERROR] ${e.message}`, "crash");
+        }
+    }
+
+    async function clearToLand() {
+        if (selectedIndex === null) {
+            logLine("[TWR] Station calling, say callsign.", "tower");
+            return;
+        }
+        if (!observation || !observation.flights[selectedIndex]) return;
+        const prev = observation.flights[selectedIndex];
+        try {
+            const data = await api("/step", { action: { flight_index: selectedIndex } });
+            observation = data.observation;
+
+            if (data.reward >= 10) {
+                logLine(
+                    `[TWR] ${prev.callsign}, cleared to land runway 27, wind 240 at 14. Welcome to Mumbai.`,
+                    "tower"
+                );
+                logLine(
+                    `[${prev.callsign}] Cleared to land 27, ${prev.callsign}.`,
+                    "pilot"
+                );
+            } else if (data.reward <= -3) {
+                logLine(
+                    `[TWR] Negative ${prev.callsign}, visibility below your minima. Maintain hold, expect vectors.`,
+                    "tower"
+                );
+            } else if (data.reward < 0) {
+                logLine(
+                    `[TWR] ${prev.callsign}, runway still occupied. Continue approach.`,
+                    "tower"
+                );
+            }
+
+            if (observation.crashed > prevCrashed) {
+                logLine(
+                    `[EMRG] Fuel exhaustion event · ${observation.crashed - prevCrashed} aircraft lost`,
+                    "crash"
+                );
+            }
+            prevCrashed = observation.crashed;
+
+            selectedIndex = null;
+            const el = document.getElementById("selected-flight");
+            if (el) el.textContent = "—";
+            renderStrips();
+            updateStatus();
+
+            if (observation.done) {
+                logLine("[SYSTEM] Episode terminated · request grade", "sys");
+            }
+        } catch (e) {
+            logLine(`[ERROR] ${e.message}`, "crash");
+        }
+    }
+
+    async function autoTriage() {
+        if (!observation || observation.done) return;
+        const landable = observation.flights
+            .map((f, i) => ({ f, i }))
+            .filter(({ f }) => f.can_land_now);
+        if (!landable.length) {
+            selectFlight(0);
+            await clearToLand();
+            return;
+        }
+        const priority = { MAYDAY: 0, PAN_PAN: 1, NONE: 2 };
+        landable.sort((a, b) =>
+            (priority[a.f.emergency] - priority[b.f.emergency]) ||
+            (a.f.fuel_minutes - b.f.fuel_minutes)
+        );
+        selectFlight(landable[0].i);
+        await clearToLand();
+    }
+
+    async function gradeEpisode() {
+        try {
+            const data = await api("/grade");
+            const el = document.getElementById("score-display");
+            if (el) el.textContent = data.score.toFixed(3);
+            logLine(
+                `[SCORE] ${data.task_id.toUpperCase()} · ${data.score.toFixed(3)} · ` +
+                `landed ${data.landing_log.length} · crashed ${data.crash_log.length} · ` +
+                `reward ${data.episode_reward.toFixed(1)}`,
+                "score"
+            );
+        } catch (e) {
+            logLine(`[ERROR] ${e.message}`, "crash");
+        }
+    }
+
+    // ---------- Wiring ----------
+    document.querySelectorAll(".sk-scenario-row").forEach((b) =>
+        b.addEventListener("click", () => resetTask(b.dataset.task))
+    );
+    const clearBtn = document.getElementById("btn-clear-land");
+    const autoBtn = document.getElementById("btn-auto");
+    const gradeBtn = document.getElementById("btn-grade");
+    if (clearBtn) clearBtn.addEventListener("click", clearToLand);
+    if (autoBtn) autoBtn.addEventListener("click", autoTriage);
+    if (gradeBtn) gradeBtn.addEventListener("click", gradeEpisode);
+
+    // Keyboard shortcuts
+    window.addEventListener("keydown", (ev) => {
+        if (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") return;
+        if (ev.key === " " || ev.key === "Enter") {
+            ev.preventDefault();
+            clearToLand();
+        } else if (ev.key.toLowerCase() === "a") {
+            autoTriage();
+        } else if (ev.key === "1") resetTask("easy");
+        else if (ev.key === "2") resetTask("medium");
+        else if (ev.key === "3") resetTask("hard");
+        else if (ev.key === "4") resetTask("extra_hard");
+        else if (ev.key === "ArrowDown" && observation && observation.flights.length) {
+            selectFlight(((selectedIndex ?? -1) + 1) % observation.flights.length);
+        } else if (ev.key === "ArrowUp" && observation && observation.flights.length) {
+            const len = observation.flights.length;
+            selectFlight(((selectedIndex ?? 0) - 1 + len) % len);
         }
     });
-}
 
-// Actions
-async function resetTask(taskId) {
-    try {
-        log(`Initializing ${taskId} scenario...`, 'system');
-        const result = await apiPost('/reset', { episode_id: taskId });
-        currentState = result;
-        updateUI();
-        log(`Scenario loaded: ${result.observation.task_name}`, 'system');
-    } catch (err) {
-        log(`Error: ${err.message}`, 'crash');
-    }
-}
-
-async function landFlight() {
-    if (!currentState) {
-        log('No active scenario. Select a task first.', 'system');
-        return;
-    }
-    
-    const index = parseInt(document.getElementById('flight-index').value) || 0;
-    
-    try {
-        const result = await apiPost('/step', { action: { flight_index: index } });
-        currentState = result;
-        
-        const reward = result.reward || 0;
-        const flight = result.observation.flights[index];
-        const callsign = flight ? flight.callsign : 'unknown';
-        
-        if (reward > 0) {
-            log(`✓ Flight ${callsign} cleared to land`, 'land');
-        } else {
-            log(`✗ Cannot land flight ${callsign} (weather/runway)`, 'crash');
-        }
-        
-        updateUI();
-        
-        if (result.done) {
-            log('Episode complete!', 'system');
-            await gradeEpisode();
-        }
-    } catch (err) {
-        log(`Error: ${err.message}`, 'crash');
-    }
-}
-
-async function autoLand() {
-    if (!currentState) {
-        log('No active scenario. Select a task first.', 'system');
-        return;
-    }
-    
-    log('Auto-triage initiated...', 'system');
-    
-    const flights = currentState.observation.flights || [];
-    if (flights.length === 0) {
-        log('No active flights', 'system');
-        return;
-    }
-    
-    // Priority: MAYDAY > PAN-PAN > medical > low fuel
-    const priority = { 'MAYDAY': 0, 'PAN_PAN': 1, 'NONE': 2 };
-    const sorted = flights.map((f, i) => ({ ...f, originalIndex: i }))
-        .sort((a, b) => {
-            const pDiff = priority[a.emergency] - priority[b.emergency];
-            if (pDiff !== 0) return pDiff;
-            return a.fuel_minutes - b.fuel_minutes;
-        });
-    
-    const nextFlight = sorted[0];
-    document.getElementById('flight-index').value = nextFlight.originalIndex;
-    
-    log(`Auto-selected: ${nextFlight.callsign} (${nextFlight.emergency}, ${nextFlight.fuel_minutes.toFixed(0)}min fuel)`, 'system');
-    await landFlight();
-}
-
-async function gradeEpisode() {
-    if (!currentState) {
-        log('No active scenario', 'system');
-        return;
-    }
-    
-    try {
-        const result = await apiPost('/grade');
-        const score = result.score || 0;
-        scoreEl.textContent = score.toFixed(3);
-        
-        if (score >= 0.7) {
-            scoreEl.style.color = '#00ff41';
-            log(`Excellent! Score: ${score.toFixed(3)}`, 'land');
-        } else if (score >= 0.4) {
-            scoreEl.style.color = '#ffbf00';
-            log(`Pass. Score: ${score.toFixed(3)}`, 'weather');
-        } else {
-            scoreEl.style.color = '#ff3333';
-            log(`Fail. Score: ${score.toFixed(3)}`, 'crash');
-        }
-    } catch (err) {
-        log(`Grading error: ${err.message}`, 'crash');
-    }
-}
-
-// UI Updates
-function updateUI() {
-    if (!currentState || !currentState.observation) return;
-    
-    const obs = currentState.observation;
-    
-    // Header
-    taskNameEl.textContent = obs.task_id.toUpperCase();
-    timeStepEl.textContent = `${obs.time_step}/${obs.max_time_steps}`;
-    
-    // Weather
-    const w = obs.weather;
-    weatherStatusEl.textContent = `${w.visibility_nm.toFixed(1)}nm ${w.precipitation}`;
-    
-    // MAYDAY count
-    const maydays = (obs.flights || []).filter(f => f.emergency === 'MAYDAY').length;
-    maydayCountEl.textContent = maydays;
-    
-    // METAR
-    const metar = formatMETAR(w, obs.time_step);
-    metarEl.textContent = metar;
-    
-    // Flight strips
-    updateFlightStrips(obs.flights || []);
-}
-
-function formatMETAR(weather, time) {
-    const day = String(Math.floor(time / 24) + 1).padStart(2, '0');
-    const hour = String(time % 24).padStart(2, '0');
-    const vis = Math.round(weather.visibility_nm * 1609.34 / 100); // nm to hundreds of meters
-    const wind = Math.round(weather.wind_knots);
-    
-    return `VABB ${day}${hour}00Z ${wind}KT ${vis}00M ${weather.precipitation.toUpperCase()} ${weather.trend.toUpperCase()}`;
-}
-
-function updateFlightStrips(flights) {
-    if (flights.length === 0) {
-        flightStripsEl.innerHTML = '<div class="strip-placeholder">No active flights</div>';
-        return;
-    }
-    
-    flightStripsEl.innerHTML = flights.map((f, i) => {
-        const emergencyClass = f.emergency.toLowerCase().replace('_', '-');
-        const canLandClass = f.can_land_now ? '' : 'cant-land';
-        const medical = f.medical_onboard ? '<span class="strip-medical">🏥</span>' : '';
-        
-        return `
-            <div class="flight-strip ${emergencyClass} ${canLandClass}">
-                <span class="strip-index">${i}</span>
-                <span class="strip-callsign">${f.callsign}</span>
-                <span class="strip-type">${f.aircraft_type.substring(0, 6)}</span>
-                <span class="strip-emergency">${f.emergency}</span>
-                <span class="strip-fuel">${f.fuel_minutes.toFixed(0)}m</span>
-                <span class="strip-pax">${f.passengers}</span>
-                ${medical}
-            </div>
-        `;
-    }).join('');
-}
-
-function log(message, type = 'system') {
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${type}`;
-    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    eventLogEl.appendChild(entry);
-    eventLogEl.scrollTop = eventLogEl.scrollHeight;
-}
-
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
-    
-    switch(e.key) {
-        case '1': resetTask('easy'); break;
-        case '2': resetTask('medium'); break;
-        case '3': resetTask('hard'); break;
-        case '4': resetTask('extra_hard'); break;
-        case ' ': landFlight(); break;
-        case 'a': autoLand(); break;
-    }
-});
-
-// Initialize
-init();
+    // Kick off render loop
+    requestAnimationFrame(render);
+    logLine("[SYSTEM] SUPERCELL tower online. Press 1, 2, or 3 to load a scenario.", "sys");
+})();

@@ -1,12 +1,26 @@
-"""Simplified task scenarios for hackathon."""
+"""SUPERCELL task scenarios — Monsoon Mumbai edition.
 
-from typing import Dict, List, Callable
-from models import Flight, Weather, EmergencyLevel, WakeCategory
+Three graded tasks (easy → medium → hard) plus one hidden bonus
+scenario (extra_hard). All flights use authentic Indian carrier
+ICAO callsigns (AIC, IGO, SEJ, VTI, AKJ, AXB) mixed with real
+international visitors to VABB. Bearings are approximate real-world
+STAR fix geometry for Chhatrapati Shivaji International Airport.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from models import EmergencyLevel, Flight, FlightInfo, WakeCategory, Weather
 
 
-def _flight_to_dict(f: Flight, idx: int) -> Dict:
-    """Convert flight to dict for API."""
-    from models import FlightInfo
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _flight_to_info(f: Flight, idx: int) -> FlightInfo:
+    """Serialize a Flight for use in an observation payload."""
     return FlightInfo(
         index=idx,
         callsign=f.callsign,
@@ -18,134 +32,562 @@ def _flight_to_dict(f: Flight, idx: int) -> Dict:
         medical_onboard=f.medical_onboard,
         min_visibility_nm=f.min_visibility_nm,
         wake_category=f.wake_category.name,
+        bearing_deg=f.bearing_deg,
+        approach_fix=f.approach_fix,
     )
 
 
 # =============================================================================
-# Task Scenarios
+# EASY  ·  "Winter Haze" — November morning, 4 flights, manageable
 # =============================================================================
 
-def build_easy() -> Dict:
-    """Easy: 4 flights, clear skies, simple emergency."""
+
+def build_easy() -> dict[str, Any]:
+    """Calm winter dawn. Clear air, four inbounds, one MAYDAY."""
     flights = [
-        Flight("UAL891", "B737-800", EmergencyLevel.MAYDAY, 8.0, 180, 12.0, 140, False, 1.0, WakeCategory.MEDIUM),
-        Flight("DAL102", "A320", EmergencyLevel.PAN_PAN, 15.0, 150, 18.0, 138, True, 1.0, WakeCategory.MEDIUM),
-        Flight("AAL33", "B737-800", EmergencyLevel.NONE, 25.0, 160, 22.0, 140, False, 1.0, WakeCategory.MEDIUM),
-        Flight("BAW5", "A321", EmergencyLevel.NONE, 30.0, 200, 28.0, 142, False, 1.0, WakeCategory.MEDIUM),
+        Flight(
+            callsign="AIC852",
+            aircraft_type="B777-300ER",
+            emergency=EmergencyLevel.MAYDAY,
+            fuel_minutes=8.0,
+            passengers=342,
+            distance_nm=12.0,
+            approach_speed_knots=148,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=45.0,
+            approach_fix="GUDOM",
+        ),
+        Flight(
+            callsign="IGO6E227",
+            aircraft_type="A320neo",
+            emergency=EmergencyLevel.PAN_PAN,
+            fuel_minutes=15.0,
+            passengers=186,
+            distance_nm=18.0,
+            approach_speed_knots=138,
+            medical_onboard=True,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=90.0,
+            approach_fix="PARAR",
+        ),
+        Flight(
+            callsign="VTI995",
+            aircraft_type="A321neo",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=25.0,
+            passengers=220,
+            distance_nm=22.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=135.0,
+            approach_fix="NOMUS",
+        ),
+        Flight(
+            callsign="SEJ144",
+            aircraft_type="B737-800",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=30.0,
+            passengers=189,
+            distance_nm=28.0,
+            approach_speed_knots=142,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=315.0,
+            approach_fix="LEKIT",
+        ),
     ]
-    weather = Weather(10.0, 8.0, 3.0, 5000.0, "none", "stable")
+    weather = Weather(
+        visibility_nm=10.0,
+        wind_knots=6.0,
+        crosswind_knots=2.0,
+        ceiling_feet=6000.0,
+        precipitation="haze",
+        trend="stable",
+    )
     return {
         "task_id": "easy",
-        "task_name": "Clear Skies Priority",
+        "task_name": "Winter Haze",
         "flights": flights,
         "weather": weather,
         "max_steps": 20,
         "separation_steps": 2,
         "weather_timeline": [],
-        "description": "4 inbound flights under clear skies. One MAYDAY fuel emergency and one PAN-PAN with medical passenger.",
+        "description": (
+            "Calm November dawn at VABB. Four inbounds — one MAYDAY fuel emergency "
+            "on AIC852, one medical PAN-PAN on IGO6E227, two routine. "
+            "Clear skies, easy priority call."
+        ),
     }
 
 
-def build_medium() -> Dict:
-    """Medium: 7 flights, storm approaching."""
+# =============================================================================
+# MEDIUM  ·  "Pre-Monsoon Squall" — May afternoon, 7 flights, weather window
+# =============================================================================
+
+
+def build_medium() -> dict[str, Any]:
+    """Arabian Sea squall line rolling in. Seven flights, shrinking window."""
     flights = [
-        Flight("UAL891", "B787-9", EmergencyLevel.MAYDAY, 6.0, 280, 10.0, 145, False, 1.5, WakeCategory.HEAVY),
-        Flight("DAL102", "A330", EmergencyLevel.PAN_PAN, 12.0, 260, 15.0, 148, True, 1.5, WakeCategory.HEAVY),
-        Flight("AAL33", "B737-MAX8", EmergencyLevel.PAN_PAN, 18.0, 175, 20.0, 140, False, 1.0, WakeCategory.MEDIUM),
-        Flight("BAW5", "A350-900", EmergencyLevel.NONE, 28.0, 320, 25.0, 150, False, 1.5, WakeCategory.HEAVY),
-        Flight("KLM601", "B777-200", EmergencyLevel.NONE, 32.0, 300, 30.0, 152, False, 2.0, WakeCategory.HEAVY),
-        Flight("QFA9", "B787-9", EmergencyLevel.NONE, 38.0, 290, 35.0, 145, False, 1.5, WakeCategory.HEAVY),
-        Flight("SIA21", "A350-1000", EmergencyLevel.NONE, 45.0, 340, 40.0, 155, False, 2.0, WakeCategory.HEAVY),
+        Flight(
+            callsign="AIC132",
+            aircraft_type="B787-9",
+            emergency=EmergencyLevel.MAYDAY,
+            fuel_minutes=6.0,
+            passengers=256,
+            distance_nm=10.0,
+            approach_speed_knots=145,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=45.0,
+            approach_fix="GUDOM",
+        ),
+        Flight(
+            callsign="AXB471",
+            aircraft_type="B737-MAX8",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=9.0,
+            passengers=174,
+            distance_nm=15.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=315.0,
+            approach_fix="LEKIT",
+        ),
+        Flight(
+            callsign="IGO6E6105",
+            aircraft_type="A321neo",
+            emergency=EmergencyLevel.PAN_PAN,
+            fuel_minutes=20.0,
+            passengers=222,
+            distance_nm=20.0,
+            approach_speed_knots=142,
+            medical_onboard=True,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=90.0,
+            approach_fix="PARAR",
+        ),
+        Flight(
+            callsign="VTI881",
+            aircraft_type="B787-9",
+            emergency=EmergencyLevel.PAN_PAN,
+            fuel_minutes=11.0,
+            passengers=264,
+            distance_nm=16.0,
+            approach_speed_knots=145,
+            medical_onboard=False,
+            min_visibility_nm=2.0,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=135.0,
+            approach_fix="NOMUS",
+        ),
+        Flight(
+            callsign="AKJ1321",
+            aircraft_type="B737-MAX8",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=14.0,
+            passengers=180,
+            distance_nm=24.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=60.0,
+            approach_fix="GUDOM",
+        ),
+        Flight(
+            callsign="BAW139",
+            aircraft_type="B777-300ER",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=35.0,
+            passengers=310,
+            distance_nm=30.0,
+            approach_speed_knots=150,
+            medical_onboard=False,
+            min_visibility_nm=3.0,  # BA stabilised approach minima
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=300.0,
+            approach_fix="LEKIT",
+        ),
+        Flight(
+            callsign="UAE504",
+            aircraft_type="A380-800",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=55.0,
+            passengers=517,
+            distance_nm=40.0,
+            approach_speed_knots=155,
+            medical_onboard=False,
+            min_visibility_nm=2.0,
+            wake_category=WakeCategory.SUPER,
+            bearing_deg=270.0,
+            approach_fix="LEKIT",
+        ),
     ]
-    weather = Weather(5.0, 25.0, 18.0, 2000.0, "rain", "deteriorating")
+    weather = Weather(
+        visibility_nm=8.0,
+        wind_knots=22.0,
+        crosswind_knots=15.0,
+        ceiling_feet=2800.0,
+        precipitation="rain",
+        trend="deteriorating",
+    )
     timeline = [
-        {"step": 0, "visibility_nm": 5.0, "trend": "deteriorating", "precipitation": "rain"},
-        {"step": 5, "visibility_nm": 3.0, "trend": "deteriorating", "precipitation": "rain"},
-        {"step": 10, "visibility_nm": 2.0, "trend": "stable", "precipitation": "thunderstorm"},
+        {"step": 0,  "visibility_nm": 8.0, "trend": "deteriorating", "precipitation": "rain"},
+        {"step": 4,  "visibility_nm": 4.0, "trend": "deteriorating", "precipitation": "rain"},
+        {"step": 9,  "visibility_nm": 2.0, "trend": "stable",        "precipitation": "thunderstorm"},
+        {"step": 14, "visibility_nm": 1.0, "trend": "deteriorating", "precipitation": "thunderstorm"},
+        {"step": 22, "visibility_nm": 3.0, "trend": "improving",     "precipitation": "rain"},
     ]
     return {
         "task_id": "medium",
-        "task_name": "Storm Window",
+        "task_name": "Pre-Monsoon Squall",
         "flights": flights,
         "weather": weather,
         "max_steps": 35,
-        "separation_steps": 2,
+        "separation_steps": 3,
         "weather_timeline": timeline,
-        "description": "7 inbound flights with a storm approaching. Balance fuel urgency against shrinking weather window.",
+        "description": (
+            "May pre-monsoon squall rolling in over the Arabian Sea. Seven inbounds. "
+            "Visibility deteriorates from 8 nm → 1 nm over ~14 steps, then eases. "
+            "BAW139 (3.0 nm minima) and UAE504 (SUPER wake) must land in the open window, "
+            "while AIC132 MAYDAY and low-fuel AXB471 race the clock."
+        ),
     }
 
 
-def build_hard() -> Dict:
-    """Hard: 12 flights, mass diversion crisis."""
+# =============================================================================
+# HARD  ·  "Mumbai Monsoon Surge" — July afternoon, 12 flights, fuel traps
+# =============================================================================
+
+
+def build_hard() -> dict[str, Any]:
+    """Peak monsoon. Twelve diverted aircraft. Traps everywhere."""
     flights = [
-        Flight("UAL891", "B787-10", EmergencyLevel.MAYDAY, 5.0, 320, 8.0, 150, True, 1.5, WakeCategory.HEAVY),
-        Flight("DAL102", "A350-1000", EmergencyLevel.MAYDAY, 6.0, 410, 10.0, 152, False, 1.5, WakeCategory.HEAVY),
-        Flight("AAL33", "B777-300ER", EmergencyLevel.MAYDAY, 7.0, 396, 12.0, 155, False, 2.0, WakeCategory.HEAVY),
-        Flight("BAW5", "A380-800", EmergencyLevel.PAN_PAN, 12.0, 525, 15.0, 158, True, 2.0, WakeCategory.SUPER),
-        Flight("KLM601", "B747-8", EmergencyLevel.PAN_PAN, 15.0, 410, 18.0, 156, False, 2.0, WakeCategory.HEAVY),
-        Flight("QFA9", "A330-300", EmergencyLevel.NONE, 20.0, 295, 22.0, 145, False, 1.5, WakeCategory.HEAVY),
-        Flight("SIA21", "A350-900", EmergencyLevel.NONE, 25.0, 325, 26.0, 148, False, 1.5, WakeCategory.HEAVY),
-        Flight("CPA548", "B777-200ER", EmergencyLevel.NONE, 30.0, 317, 30.0, 148, False, 1.5, WakeCategory.HEAVY),
-        Flight("ANA177", "B787-9", EmergencyLevel.NONE, 35.0, 292, 34.0, 150, False, 1.5, WakeCategory.HEAVY),
-        Flight("JAL62", "B737-MAX9", EmergencyLevel.NONE, 40.0, 178, 38.0, 142, False, 1.0, WakeCategory.MEDIUM),
-        Flight("UAE225", "A380-800", EmergencyLevel.NONE, 50.0, 519, 45.0, 155, False, 2.0, WakeCategory.SUPER),
-        Flight("LH440", "A340-600", EmergencyLevel.NONE, 55.0, 380, 50.0, 150, False, 2.0, WakeCategory.HEAVY),
+        Flight(
+            callsign="AIC176",
+            aircraft_type="B787-9",
+            emergency=EmergencyLevel.MAYDAY,
+            fuel_minutes=5.0,
+            passengers=256,
+            distance_nm=8.0,
+            approach_speed_knots=145,
+            medical_onboard=True,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=45.0,
+            approach_fix="GUDOM",
+        ),
+        Flight(
+            callsign="AIC348",
+            aircraft_type="A330-300",
+            emergency=EmergencyLevel.MAYDAY,
+            fuel_minutes=7.0,
+            passengers=291,
+            distance_nm=10.0,
+            approach_speed_knots=148,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=30.0,
+            approach_fix="GUDOM",
+        ),
+        Flight(
+            # The weather-blocked MAYDAY trap
+            callsign="IGO6E2043",
+            aircraft_type="A320neo",
+            emergency=EmergencyLevel.MAYDAY,
+            fuel_minutes=14.0,
+            passengers=180,
+            distance_nm=12.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=4.0,   # <-- BLOCKED at storm peak
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=90.0,
+            approach_fix="PARAR",
+        ),
+        Flight(
+            callsign="SEJ21",
+            aircraft_type="B737-800",
+            emergency=EmergencyLevel.PAN_PAN,
+            fuel_minutes=10.0,
+            passengers=189,
+            distance_nm=14.0,
+            approach_speed_knots=140,
+            medical_onboard=True,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=120.0,
+            approach_fix="NOMUS",
+        ),
+        Flight(
+            callsign="VTI997",
+            aircraft_type="A321neo",
+            emergency=EmergencyLevel.PAN_PAN,
+            fuel_minutes=14.0,
+            passengers=222,
+            distance_nm=18.0,
+            approach_speed_knots=142,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=315.0,
+            approach_fix="LEKIT",
+        ),
+        Flight(
+            # The silent fuel trap — NONE status but critically low
+            callsign="IGO6E5393",
+            aircraft_type="A320",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=4.0,
+            passengers=174,
+            distance_nm=11.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=1.0,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=75.0,
+            approach_fix="PARAR",
+        ),
+        Flight(
+            # Low fuel + blocked at peak — second trap
+            callsign="AXB812",
+            aircraft_type="B737-800",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=6.0,
+            passengers=172,
+            distance_nm=15.0,
+            approach_speed_knots=140,
+            medical_onboard=False,
+            min_visibility_nm=2.5,
+            wake_category=WakeCategory.MEDIUM,
+            bearing_deg=105.0,
+            approach_fix="PARAR",
+        ),
+        Flight(
+            # Business jet VFR-only — cannot land at peak
+            callsign="VT-JEX",
+            aircraft_type="Cessna Citation X",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=12.0,
+            passengers=8,
+            distance_nm=16.0,
+            approach_speed_knots=130,
+            medical_onboard=False,
+            min_visibility_nm=3.0,
+            wake_category=WakeCategory.LIGHT,
+            bearing_deg=200.0,
+            approach_fix="NOMUS",
+        ),
+        Flight(
+            callsign="FDX57",
+            aircraft_type="B767-300F",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=18.0,
+            passengers=0,
+            distance_nm=20.0,
+            approach_speed_knots=148,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=280.0,
+            approach_fix="LEKIT",
+        ),
+        Flight(
+            callsign="QTR554",
+            aircraft_type="B787-9",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=15.0,
+            passengers=254,
+            distance_nm=22.0,
+            approach_speed_knots=145,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=250.0,
+            approach_fix="LEKIT",
+        ),
+        Flight(
+            callsign="SIA422",
+            aircraft_type="A350-900",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=25.0,
+            passengers=303,
+            distance_nm=30.0,
+            approach_speed_knots=150,
+            medical_onboard=False,
+            min_visibility_nm=1.5,
+            wake_category=WakeCategory.HEAVY,
+            bearing_deg=135.0,
+            approach_fix="NOMUS",
+        ),
+        Flight(
+            # Super-wake monster — creates 4-step separation if sequenced wrong
+            callsign="UAE504",
+            aircraft_type="A380-800",
+            emergency=EmergencyLevel.NONE,
+            fuel_minutes=40.0,
+            passengers=517,
+            distance_nm=45.0,
+            approach_speed_knots=155,
+            medical_onboard=False,
+            min_visibility_nm=2.0,
+            wake_category=WakeCategory.SUPER,
+            bearing_deg=270.0,
+            approach_fix="LEKIT",
+        ),
     ]
-    weather = Weather(4.0, 30.0, 22.0, 1500.0, "rain", "deteriorating")
+    weather = Weather(
+        visibility_nm=2.0,
+        wind_knots=28.0,
+        crosswind_knots=20.0,
+        ceiling_feet=1500.0,
+        precipitation="thunderstorm",
+        trend="stable",
+    )
     timeline = [
-        {"step": 0, "visibility_nm": 4.0, "trend": "deteriorating", "precipitation": "rain"},
-        {"step": 5, "visibility_nm": 2.5, "trend": "stable", "precipitation": "rain"},
-        {"step": 10, "visibility_nm": 1.5, "trend": "deteriorating", "precipitation": "thunderstorm"},
-        {"step": 18, "visibility_nm": 3.0, "trend": "improving", "precipitation": "rain"},
-        {"step": 28, "visibility_nm": 5.0, "trend": "improving", "precipitation": "none"},
+        {"step": 0,  "visibility_nm": 2.0, "trend": "deteriorating", "precipitation": "thunderstorm"},
+        {"step": 5,  "visibility_nm": 1.0, "trend": "stable",        "precipitation": "thunderstorm"},
+        {"step": 10, "visibility_nm": 4.5, "trend": "improving",     "precipitation": "rain"},
+        {"step": 14, "visibility_nm": 1.5, "trend": "deteriorating", "precipitation": "thunderstorm"},
+        {"step": 22, "visibility_nm": 3.0, "trend": "improving",     "precipitation": "rain"},
+        {"step": 32, "visibility_nm": 5.0, "trend": "stable",        "precipitation": "rain"},
     ]
     return {
         "task_id": "hard",
-        "task_name": "Mass Diversion Crisis",
+        "task_name": "Mumbai Monsoon Surge",
         "flights": flights,
         "weather": weather,
         "max_steps": 50,
-        "separation_steps": 2,
+        "separation_steps": 3,
         "weather_timeline": timeline,
-        "description": "12 aircraft diverted with three MAYDAYs, two PAN-PANs, fuel traps, and oscillating weather.",
+        "description": (
+            "July monsoon at VABB — twelve diverted aircraft, three MAYDAYs, two PAN-PANs, "
+            "fuel traps hiding inside NONE flights, a weather-blocked MAYDAY (IGO6E2043), "
+            "and a SUPER-wake A380 that creates 4-step separation cascades if mis-sequenced. "
+            "The weather window at steps 10–13 is the only moment the 3+ nm minima flights can land. "
+            "Frontier models consistently fail this one."
+        ),
     }
 
 
-def build_extra_hard() -> Dict:
-    """Extra Hard: 20 flights, total system chaos."""
+# =============================================================================
+# EXTRA_HARD  ·  "Total System Chaos" — hidden bonus scenario, 20 flights
+# =============================================================================
+
+
+def build_extra_hard() -> dict[str, Any]:
+    """Hidden bonus. Not required for spec compliance — an extreme stress test."""
     flights = [
-        Flight("UAL891", "B787-10", EmergencyLevel.MAYDAY, 3.0, 320, 8.0, 150, True, 1.5, WakeCategory.HEAVY),
-        Flight("DAL102", "A350-1000", EmergencyLevel.MAYDAY, 4.0, 410, 10.0, 152, False, 1.5, WakeCategory.HEAVY),
-        Flight("AAL33", "B777-300ER", EmergencyLevel.MAYDAY, 5.0, 396, 12.0, 155, False, 2.0, WakeCategory.HEAVY),
-        Flight("BAW5", "A380-800", EmergencyLevel.MAYDAY, 6.0, 525, 14.0, 158, True, 2.0, WakeCategory.SUPER),
-        Flight("KLM601", "B747-8", EmergencyLevel.MAYDAY, 7.0, 410, 16.0, 156, False, 2.0, WakeCategory.HEAVY),
-        Flight("QFA9", "A330-300", EmergencyLevel.PAN_PAN, 8.0, 295, 18.0, 145, True, 1.5, WakeCategory.HEAVY),
-        Flight("SIA21", "A350-900", EmergencyLevel.PAN_PAN, 9.0, 325, 20.0, 148, True, 1.5, WakeCategory.HEAVY),
-        Flight("CPA548", "B777-200ER", EmergencyLevel.PAN_PAN, 11.0, 317, 22.0, 148, False, 1.5, WakeCategory.HEAVY),
-        Flight("ANA177", "B787-9", EmergencyLevel.PAN_PAN, 13.0, 292, 24.0, 150, False, 1.5, WakeCategory.HEAVY),
-        Flight("JAL62", "B737-MAX9", EmergencyLevel.NONE, 15.0, 178, 26.0, 142, False, 1.0, WakeCategory.MEDIUM),
-        Flight("UAE225", "A380-800", EmergencyLevel.NONE, 45.0, 519, 40.0, 155, False, 2.0, WakeCategory.SUPER),
-        Flight("LH440", "A340-600", EmergencyLevel.NONE, 18.0, 380, 30.0, 150, False, 2.0, WakeCategory.HEAVY),
-        Flight("AF66", "B777-300ER", EmergencyLevel.NONE, 22.0, 472, 35.0, 152, False, 1.5, WakeCategory.HEAVY),
-        Flight("VS3", "A350-1000", EmergencyLevel.NONE, 35.0, 335, 32.0, 153, False, 1.5, WakeCategory.HEAVY),
-        Flight("SKW4451", "E175", EmergencyLevel.NONE, 14.0, 76, 15.0, 125, False, 2.5, WakeCategory.LIGHT),
-        Flight("ASH5842", "CRJ-900", EmergencyLevel.NONE, 12.0, 76, 18.0, 135, False, 3.0, WakeCategory.LIGHT),
-        Flight("N551GA", "Cirrus SR22", EmergencyLevel.NONE, 10.0, 4, 8.0, 120, False, 5.0, WakeCategory.LIGHT),
-        Flight("N8721F", "Cessna 208", EmergencyLevel.NONE, 16.0, 9, 20.0, 140, False, 4.0, WakeCategory.LIGHT),
-        Flight("FDX907", "B767-300F", EmergencyLevel.NONE, 28.0, 0, 28.0, 145, False, 1.5, WakeCategory.HEAVY),
-        Flight("UPS29", "MD-11F", EmergencyLevel.NONE, 25.0, 0, 30.0, 148, False, 2.0, WakeCategory.HEAVY),
+        Flight(callsign="AIC101", aircraft_type="B777-300ER", emergency=EmergencyLevel.MAYDAY,
+               fuel_minutes=3.0, passengers=342, distance_nm=8.0, medical_onboard=True,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=30.0, approach_fix="GUDOM"),
+        Flight(callsign="AIC118", aircraft_type="A350-900", emergency=EmergencyLevel.MAYDAY,
+               fuel_minutes=4.0, passengers=303, distance_nm=10.0, medical_onboard=False,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=45.0, approach_fix="GUDOM"),
+        Flight(callsign="IGO6E1", aircraft_type="A320neo", emergency=EmergencyLevel.MAYDAY,
+               fuel_minutes=5.0, passengers=180, distance_nm=11.0, medical_onboard=False,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=90.0, approach_fix="PARAR"),
+        Flight(callsign="SEJ555", aircraft_type="B737-800", emergency=EmergencyLevel.MAYDAY,
+               fuel_minutes=6.0, passengers=189, distance_nm=12.0, medical_onboard=True,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=110.0, approach_fix="NOMUS"),
+        Flight(callsign="VTI21", aircraft_type="A321neo", emergency=EmergencyLevel.MAYDAY,
+               fuel_minutes=7.0, passengers=222, distance_nm=14.0, medical_onboard=False,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=315.0, approach_fix="LEKIT"),
+        Flight(callsign="AXB287", aircraft_type="B737-MAX8", emergency=EmergencyLevel.PAN_PAN,
+               fuel_minutes=8.0, passengers=174, distance_nm=15.0, medical_onboard=True,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=60.0, approach_fix="GUDOM"),
+        Flight(callsign="AKJ777", aircraft_type="B737-MAX8", emergency=EmergencyLevel.PAN_PAN,
+               fuel_minutes=9.0, passengers=178, distance_nm=16.0, medical_onboard=True,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=135.0, approach_fix="NOMUS"),
+        Flight(callsign="QTR556", aircraft_type="B787-9", emergency=EmergencyLevel.PAN_PAN,
+               fuel_minutes=11.0, passengers=254, distance_nm=18.0, medical_onboard=True,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=270.0, approach_fix="LEKIT"),
+        Flight(callsign="ETD203", aircraft_type="B787-9", emergency=EmergencyLevel.PAN_PAN,
+               fuel_minutes=13.0, passengers=262, distance_nm=20.0, medical_onboard=False,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=290.0, approach_fix="LEKIT"),
+        Flight(callsign="IGO6E922", aircraft_type="A320", emergency=EmergencyLevel.NONE,
+               fuel_minutes=4.0, passengers=174, distance_nm=12.0, medical_onboard=False,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=75.0, approach_fix="PARAR"),
+        Flight(callsign="VT-HEX", aircraft_type="Cessna Citation XLS", emergency=EmergencyLevel.NONE,
+               fuel_minutes=10.0, passengers=6, distance_nm=14.0, medical_onboard=False,
+               min_visibility_nm=5.0, wake_category=WakeCategory.LIGHT,
+               bearing_deg=200.0, approach_fix="NOMUS"),
+        Flight(callsign="N551GA", aircraft_type="Cirrus SR22", emergency=EmergencyLevel.NONE,
+               fuel_minutes=16.0, passengers=4, distance_nm=8.0, medical_onboard=False,
+               min_visibility_nm=5.0, wake_category=WakeCategory.LIGHT,
+               bearing_deg=215.0, approach_fix="NOMUS"),
+        Flight(callsign="FDX801", aircraft_type="B767-300F", emergency=EmergencyLevel.NONE,
+               fuel_minutes=15.0, passengers=0, distance_nm=20.0, medical_onboard=False,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=280.0, approach_fix="LEKIT"),
+        Flight(callsign="BLQ200", aircraft_type="B747-400F", emergency=EmergencyLevel.NONE,
+               fuel_minutes=20.0, passengers=0, distance_nm=24.0, medical_onboard=False,
+               min_visibility_nm=2.0, wake_category=WakeCategory.HEAVY,
+               bearing_deg=300.0, approach_fix="LEKIT"),
+        Flight(callsign="AIC999", aircraft_type="A321", emergency=EmergencyLevel.NONE,
+               fuel_minutes=22.0, passengers=232, distance_nm=26.0, medical_onboard=False,
+               min_visibility_nm=1.0, wake_category=WakeCategory.MEDIUM,
+               bearing_deg=40.0, approach_fix="GUDOM"),
+        Flight(callsign="UAE504", aircraft_type="A380-800", emergency=EmergencyLevel.NONE,
+               fuel_minutes=55.0, passengers=517, distance_nm=45.0, medical_onboard=False,
+               min_visibility_nm=2.0, wake_category=WakeCategory.SUPER,
+               bearing_deg=270.0, approach_fix="LEKIT"),
+        Flight(callsign="SVA760", aircraft_type="B777-300ER", emergency=EmergencyLevel.NONE,
+               fuel_minutes=30.0, passengers=396, distance_nm=32.0, medical_onboard=False,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=285.0, approach_fix="LEKIT"),
+        Flight(callsign="DLH764", aircraft_type="A340-600", emergency=EmergencyLevel.NONE,
+               fuel_minutes=35.0, passengers=380, distance_nm=35.0, medical_onboard=False,
+               min_visibility_nm=2.0, wake_category=WakeCategory.HEAVY,
+               bearing_deg=310.0, approach_fix="LEKIT"),
+        Flight(callsign="BAW138", aircraft_type="B777-300ER", emergency=EmergencyLevel.NONE,
+               fuel_minutes=38.0, passengers=310, distance_nm=38.0, medical_onboard=False,
+               min_visibility_nm=3.0, wake_category=WakeCategory.HEAVY,
+               bearing_deg=300.0, approach_fix="LEKIT"),
+        Flight(callsign="CPA694", aircraft_type="B777-300ER", emergency=EmergencyLevel.NONE,
+               fuel_minutes=45.0, passengers=340, distance_nm=42.0, medical_onboard=False,
+               min_visibility_nm=1.5, wake_category=WakeCategory.HEAVY,
+               bearing_deg=85.0, approach_fix="PARAR"),
     ]
-    weather = Weather(3.0, 35.0, 25.0, 1500.0, "rain", "deteriorating")
+    weather = Weather(
+        visibility_nm=3.0,
+        wind_knots=35.0,
+        crosswind_knots=25.0,
+        ceiling_feet=1200.0,
+        precipitation="thunderstorm",
+        trend="deteriorating",
+    )
     timeline = [
-        {"step": 0, "visibility_nm": 3.0, "trend": "deteriorating", "precipitation": "rain"},
-        {"step": 4, "visibility_nm": 1.0, "trend": "stable", "precipitation": "thunderstorm"},
-        {"step": 8, "visibility_nm": 5.0, "trend": "improving", "precipitation": "rain"},
-        {"step": 12, "visibility_nm": 2.0, "trend": "deteriorating", "precipitation": "snow"},
-        {"step": 16, "visibility_nm": 0.5, "trend": "stable", "precipitation": "thunderstorm"},
-        {"step": 22, "visibility_nm": 4.0, "trend": "improving", "precipitation": "rain"},
-        {"step": 28, "visibility_nm": 6.0, "trend": "stable", "precipitation": "none"},
-        {"step": 34, "visibility_nm": 2.5, "trend": "deteriorating", "precipitation": "snow"},
-        {"step": 40, "visibility_nm": 1.5, "trend": "stable", "precipitation": "rain"},
+        {"step": 0,  "visibility_nm": 3.0, "trend": "deteriorating", "precipitation": "thunderstorm"},
+        {"step": 4,  "visibility_nm": 1.0, "trend": "stable",        "precipitation": "thunderstorm"},
+        {"step": 8,  "visibility_nm": 5.0, "trend": "improving",     "precipitation": "rain"},
+        {"step": 12, "visibility_nm": 2.0, "trend": "deteriorating", "precipitation": "rain"},
+        {"step": 16, "visibility_nm": 0.5, "trend": "stable",        "precipitation": "thunderstorm"},
+        {"step": 22, "visibility_nm": 4.0, "trend": "improving",     "precipitation": "rain"},
+        {"step": 30, "visibility_nm": 6.0, "trend": "stable",        "precipitation": "none"},
+        {"step": 38, "visibility_nm": 2.5, "trend": "deteriorating", "precipitation": "rain"},
+        {"step": 46, "visibility_nm": 1.5, "trend": "stable",        "precipitation": "thunderstorm"},
     ]
     return {
         "task_id": "extra_hard",
@@ -153,14 +595,24 @@ def build_extra_hard() -> Dict:
         "flights": flights,
         "weather": weather,
         "max_steps": 80,
-        "separation_steps": 2,
+        "separation_steps": 3,
         "weather_timeline": timeline,
-        "description": "20 aircraft in a total system failure scenario. Five MAYDAYs with fuel critical, four PAN-PANs with medical emergencies, VFR aircraft, and extreme weather volatility.",
+        "description": (
+            "Hidden bonus scenario. Twenty aircraft, five MAYDAYs with critical fuel, "
+            "four medical PAN-PANs, VFR-only business jets, a SUPER-wake A380, "
+            "and a weather timeline that oscillates from 0.5 nm to 6 nm four times. "
+            "Not required for spec compliance — included for agents that want to prove "
+            "they can handle true chaos."
+        ),
     }
 
 
-# Task registry
-TASKS: Dict[str, Callable] = {
+# =============================================================================
+# Registry
+# =============================================================================
+
+
+TASKS: dict[str, Callable[[], dict[str, Any]]] = {
     "easy": build_easy,
     "medium": build_medium,
     "hard": build_hard,
@@ -168,16 +620,18 @@ TASKS: Dict[str, Callable] = {
 }
 
 
-def list_tasks() -> List[Dict]:
-    """List all available tasks."""
-    return [
-        {
+def list_tasks() -> list[dict[str, Any]]:
+    """List all available tasks for the /tasks endpoint."""
+    result = []
+    for task_id, builder in TASKS.items():
+        data = builder()
+        result.append({
             "id": task_id,
             "task_id": task_id,
-            "task_name": builder()["task_name"],
-            "description": builder()["description"],
-            "num_flights": len(builder()["flights"]),
-            "max_steps": builder()["max_steps"],
+            "task_name": data["task_name"],
+            "description": data["description"],
+            "num_flights": len(data["flights"]),
+            "max_steps": data["max_steps"],
             "has_grader": True,
             "grader": {
                 "id": task_id,
@@ -185,6 +639,5 @@ def list_tasks() -> List[Dict]:
                 "endpoint": "/grade",
                 "scoring_range": [0.0, 1.0],
             },
-        }
-        for task_id, builder in TASKS.items()
-    ]
+        })
+    return result

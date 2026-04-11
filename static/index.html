@@ -3,125 +3,327 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSIA Mumbai - ATC Emergency Triage</title>
+    <title>SUPERCELL — VABB Mumbai ATC</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="logo">
-                <span class="airport-code">CSIA</span>
-                <span class="airport-name">Chhatrapati Shivaji Maharaj International Airport</span>
+    <!-- ================= Navigation (glass) ================= -->
+    <nav class="sk-nav" aria-label="Primary">
+        <div class="sk-nav-inner">
+            <div class="sk-nav-brand">SUPERCELL</div>
+            <ul class="sk-nav-links">
+                <li><a href="#hero">Overview</a></li>
+                <li><a href="#scope">Tower</a></li>
+                <li><a href="#tasks">Scenarios</a></li>
+                <li><a href="#spec">Spec</a></li>
+                <li><a href="/docs" target="_blank" rel="noopener">API</a></li>
+            </ul>
+            <div class="sk-nav-cta">
+                <a class="sk-pill sk-pill-outline" href="https://github.com" target="_blank" rel="noopener">GitHub &rsaquo;</a>
             </div>
-            <div class="status-bar">
-                <div class="status-item">
-                    <span class="label">TASK</span>
-                    <span id="task-name" class="value">-</span>
-                </div>
-                <div class="status-item">
-                    <span class="label">TIME</span>
-                    <span id="time-step" class="value">-</span>
-                </div>
-                <div class="status-item">
-                    <span class="label">WEATHER</span>
-                    <span id="weather-status" class="value">-</span>
-                </div>
-                <div class="status-item alert">
-                    <span class="label">MAYDAY</span>
-                    <span id="mayday-count" class="value">0</span>
-                </div>
-            </div>
-        </header>
+        </div>
+    </nav>
 
-        <!-- Main Content -->
-        <main class="main">
-            <!-- Left Panel: Radar -->
-            <div class="radar-panel">
-                <div class="radar-header">
-                    <h3>PRIMARY SURVEILLANCE RADAR</h3>
-                    <span class="radar-freq">1030 MHz | 60 RPM</span>
+    <!-- ================= Hero (black) ================= -->
+    <section class="sk-section sk-section-dark" id="hero">
+        <div class="sk-container sk-hero">
+            <p class="sk-eyebrow">Meta PyTorch OpenEnv Hackathon</p>
+            <h1 class="sk-display">
+                Monsoon Mumbai.<br>
+                One runway. Twelve emergencies.
+            </h1>
+            <p class="sk-subhead">
+                An OpenEnv-compliant reinforcement learning environment set at
+                VABB, the world's busiest single-runway airport, during the
+                July monsoon.
+            </p>
+            <div class="sk-cta-row">
+                <a class="sk-pill sk-pill-outline sk-pill-light" href="#scope">Open the tower &rsaquo;</a>
+                <a class="sk-pill sk-pill-solid" href="#tasks">Run a scenario</a>
+            </div>
+            <div class="sk-hero-metrics">
+                <div class="sk-metric">
+                    <div class="sk-metric-value">4</div>
+                    <div class="sk-metric-label">Graded Scenarios</div>
                 </div>
-                <canvas id="radar-canvas" width="600" height="600"></canvas>
-                <div class="radar-info">
-                    <div class="sweep-angle">SWEEP: <span id="sweep-deg">0°</span></div>
-                    <div class="range-rings">RANGE: 40 NM</div>
+                <div class="sk-metric">
+                    <div class="sk-metric-value">0 – 1</div>
+                    <div class="sk-metric-label">Deterministic Score</div>
+                </div>
+                <div class="sk-metric">
+                    <div class="sk-metric-value">0.604</div>
+                    <div class="sk-metric-label">Heuristic on Hard</div>
+                </div>
+                <div class="sk-metric">
+                    <div class="sk-metric-value">12 / 6</div>
+                    <div class="sk-metric-label">MAYDAYs / Traps</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= Live Tower (light) ================= -->
+    <section class="sk-section sk-section-light" id="scope">
+        <div class="sk-container">
+            <header class="sk-section-header">
+                <p class="sk-eyebrow-dark">Live Environment</p>
+                <h2 class="sk-heading">VABB Tower.<br>Clear to land.</h2>
+                <p class="sk-subhead-dark">
+                    Select a scenario. Read the flight strips. Decide who lands next.
+                    Or press <kbd>A</kbd> and let the built-in heuristic agent fly.
+                </p>
+            </header>
+
+            <!-- Status strip -->
+            <div class="sk-status-grid">
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Scenario</div>
+                    <div class="sk-stat-value" id="task-name">—</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Step</div>
+                    <div class="sk-stat-value" id="time-step">00 / 00</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Visibility</div>
+                    <div class="sk-stat-value" id="vis-value">— nm</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Wind</div>
+                    <div class="sk-stat-value" id="wind-value">— kt</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">MAYDAY</div>
+                    <div class="sk-stat-value sk-stat-accent" id="mayday-count">0</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Landed</div>
+                    <div class="sk-stat-value" id="landed-count">0</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Crashed</div>
+                    <div class="sk-stat-value sk-stat-danger" id="crashed-count">0</div>
+                </div>
+                <div class="sk-status-cell">
+                    <div class="sk-stat-label">Reward</div>
+                    <div class="sk-stat-value" id="episode-reward">0.0</div>
                 </div>
             </div>
 
-            <!-- Right Panel: Controls & Data -->
-            <div class="control-panel">
-                <!-- Task Selection -->
-                <div class="section">
-                    <h4>SCENARIO SELECT</h4>
-                    <div class="task-buttons">
-                        <button onclick="resetTask('easy')" class="task-btn easy">
-                            <span class="level">EASY</span>
-                            <span class="desc">4 Flights | Clear</span>
-                        </button>
-                        <button onclick="resetTask('medium')" class="task-btn medium">
-                            <span class="level">MEDIUM</span>
-                            <span class="desc">7 Flights | Storm</span>
-                        </button>
-                        <button onclick="resetTask('hard')" class="task-btn hard">
-                            <span class="level">HARD</span>
-                            <span class="desc">12 Flights | Crisis</span>
-                        </button>
-                        <button onclick="resetTask('extra_hard')" class="task-btn chaos">
-                            <span class="level">CHAOS</span>
-                            <span class="desc">20 Flights | System Failure</span>
-                        </button>
+            <!-- Main two-column: radar + control -->
+            <div class="sk-tower-grid">
+                <!-- Radar card -->
+                <div class="sk-card">
+                    <div class="sk-card-header">
+                        <h3 class="sk-card-title">Primary Surveillance Radar</h3>
+                        <span class="sk-card-caption">40 NM range · 60 RPM sweep</span>
+                    </div>
+                    <div class="sk-radar-frame">
+                        <canvas id="radar-canvas" width="620" height="620" aria-label="Radar scope"></canvas>
+                    </div>
+                    <div class="sk-radar-legend">
+                        <span><span class="sk-dot sk-dot-mayday"></span>MAYDAY</span>
+                        <span><span class="sk-dot sk-dot-panpan"></span>PAN-PAN</span>
+                        <span><span class="sk-dot sk-dot-none"></span>Normal</span>
+                        <span class="sk-legend-sep">|</span>
+                        <span id="sweep-deg">000°</span>
                     </div>
                 </div>
 
-                <!-- Flight Strips -->
-                <div class="section">
-                    <h4>FLIGHT STRIPS</h4>
-                    <div id="flight-strips" class="flight-strips">
-                        <div class="strip-placeholder">Select a scenario to begin</div>
+                <!-- Control column -->
+                <div class="sk-control-column">
+                    <!-- Scenario picker -->
+                    <div class="sk-card">
+                        <div class="sk-card-header">
+                            <h3 class="sk-card-title">Scenario</h3>
+                            <span class="sk-card-caption">Pick a difficulty</span>
+                        </div>
+                        <div class="sk-card-body">
+                            <div class="sk-scenario-stack">
+                                <button class="sk-scenario-row" data-task="easy">
+                                    <div>
+                                        <div class="sk-scenario-name">Winter Haze</div>
+                                        <div class="sk-scenario-desc">4 inbounds · clear skies · single MAYDAY</div>
+                                    </div>
+                                    <span class="sk-scenario-level">Easy</span>
+                                </button>
+                                <button class="sk-scenario-row" data-task="medium">
+                                    <div>
+                                        <div class="sk-scenario-name">Pre-Monsoon Squall</div>
+                                        <div class="sk-scenario-desc">7 inbounds · closing weather window</div>
+                                    </div>
+                                    <span class="sk-scenario-level">Medium</span>
+                                </button>
+                                <button class="sk-scenario-row" data-task="hard">
+                                    <div>
+                                        <div class="sk-scenario-name">Mumbai Monsoon Surge</div>
+                                        <div class="sk-scenario-desc">12 aircraft · 3 MAYDAYs · fuel traps</div>
+                                    </div>
+                                    <span class="sk-scenario-level sk-scenario-level-hard">Hard</span>
+                                </button>
+                                <button class="sk-scenario-row sk-scenario-row-ghost" data-task="extra_hard">
+                                    <div>
+                                        <div class="sk-scenario-name">Total System Chaos</div>
+                                        <div class="sk-scenario-desc">20 aircraft · hidden bonus</div>
+                                    </div>
+                                    <span class="sk-scenario-level">Bonus</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Weather Panel -->
-                <div class="section">
-                    <h4>METAR - VABB</h4>
-                    <div id="metar-display" class="metar">
-                        <span class="loading">Waiting for weather data...</span>
+                    <!-- Flight strips -->
+                    <div class="sk-card">
+                        <div class="sk-card-header">
+                            <h3 class="sk-card-title">Flight Progress Strips</h3>
+                            <span class="sk-card-caption" id="strip-count">0 airborne</span>
+                        </div>
+                        <div class="sk-card-body sk-strip-body">
+                            <div class="sk-strip-stack" id="flight-strips">
+                                <div class="sk-strip-empty">Select a scenario to load traffic.</div>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Action Panel -->
-                <div class="section action-section">
-                    <h4>ATC ACTIONS</h4>
-                    <div class="action-controls">
-                        <input type="number" id="flight-index" min="0" placeholder="Flight Index" class="index-input">
-                        <button onclick="landFlight()" class="action-btn land">
-                            🛬 CLEAR TO LAND
-                        </button>
-                        <button onclick="autoLand()" class="action-btn auto">
-                            🤖 AUTO TRIAGE
-                        </button>
+                    <!-- METAR -->
+                    <div class="sk-card">
+                        <div class="sk-card-header">
+                            <h3 class="sk-card-title">METAR · VABB</h3>
+                        </div>
+                        <div class="sk-card-body">
+                            <p class="sk-metar" id="metar-line">METAR VABB NIL</p>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Score -->
-                <div class="section">
-                    <h4>EPISODE SCORE</h4>
-                    <div id="score-display" class="score">-</div>
-                    <button onclick="gradeEpisode()" class="action-btn grade">
-                        📊 GRADE
-                    </button>
+                    <!-- Actions -->
+                    <div class="sk-card">
+                        <div class="sk-card-header">
+                            <h3 class="sk-card-title">Tower Actions</h3>
+                        </div>
+                        <div class="sk-card-body">
+                            <div class="sk-action-row">
+                                <button class="sk-btn sk-btn-primary" id="btn-clear-land">Clear to Land</button>
+                                <button class="sk-btn sk-btn-secondary" id="btn-auto">Auto Triage</button>
+                                <button class="sk-btn sk-btn-tertiary" id="btn-grade">Grade Episode</button>
+                            </div>
+                            <div class="sk-selected">
+                                Selected <span id="selected-flight">—</span>
+                            </div>
+                            <div class="sk-score-row">
+                                <span class="sk-score-label">Current score</span>
+                                <span class="sk-score-value" id="score-display">—</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </main>
 
-        <!-- Footer -->
-        <footer class="footer">
-            <div class="log-console" id="event-log">
-                <div class="log-entry system">System initialized. Waiting for scenario selection...</div>
+            <!-- Voice log -->
+            <div class="sk-card sk-log-card">
+                <div class="sk-card-header">
+                    <h3 class="sk-card-title">VABB Tower Voice Log</h3>
+                    <span class="sk-card-caption">118.100 MHz</span>
+                </div>
+                <div class="sk-log" id="event-log">
+                    <div class="sk-log-line sk-log-sys">[SYSTEM] VABB Tower online. Awaiting scenario selection.</div>
+                </div>
             </div>
-        </footer>
-    </div>
+        </div>
+    </section>
+
+    <!-- ================= Scenarios (black) ================= -->
+    <section class="sk-section sk-section-dark" id="tasks">
+        <div class="sk-container">
+            <header class="sk-section-header sk-section-header-dark">
+                <p class="sk-eyebrow">Three Graded Tasks</p>
+                <h2 class="sk-heading-dark">Easy &rarr; Medium &rarr; Hard.<br>Plus one hidden bonus.</h2>
+            </header>
+            <div class="sk-scenario-grid">
+                <article class="sk-scenario-card">
+                    <p class="sk-scenario-tag">Easy · Winter Haze</p>
+                    <h3 class="sk-scenario-title">4 inbounds, clear skies.</h3>
+                    <p class="sk-scenario-copy">
+                        Calm November dawn at VABB. One MAYDAY, one medical PAN-PAN.
+                        The correct priority is unambiguous — a naive heuristic reaches a perfect 1.000.
+                    </p>
+                    <p class="sk-scenario-stat">Heuristic baseline <span>1.000</span></p>
+                </article>
+                <article class="sk-scenario-card">
+                    <p class="sk-scenario-tag">Medium · Pre-Monsoon Squall</p>
+                    <h3 class="sk-scenario-title">7 inbounds, closing window.</h3>
+                    <p class="sk-scenario-copy">
+                        May afternoon, Arabian Sea squall rolling in. Visibility drops from
+                        8 nm → 1 nm over 14 steps. Heavy aircraft must land in the open window.
+                    </p>
+                    <p class="sk-scenario-stat">Heuristic baseline <span>0.940</span></p>
+                </article>
+                <article class="sk-scenario-card">
+                    <p class="sk-scenario-tag">Hard · Mumbai Monsoon Surge</p>
+                    <h3 class="sk-scenario-title">12 inbounds. Traps everywhere.</h3>
+                    <p class="sk-scenario-copy">
+                        Peak July monsoon. A weather-blocked MAYDAY, a silent fuel trap,
+                        a SUPER-wake A380 that cascades separation — frontier models
+                        consistently fail this one.
+                    </p>
+                    <p class="sk-scenario-stat">Heuristic baseline <span>0.604</span></p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= Spec (light) ================= -->
+    <section class="sk-section sk-section-light" id="spec">
+        <div class="sk-container">
+            <header class="sk-section-header">
+                <p class="sk-eyebrow-dark">OpenEnv v1 Compliance</p>
+                <h2 class="sk-heading">Built strict.</h2>
+                <p class="sk-subhead-dark">
+                    Pydantic models, dense reward, deterministic graders, canonical endpoints.
+                    Passes <code>openenv validate</code> locally and at runtime.
+                </p>
+            </header>
+            <div class="sk-spec-grid">
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">01</div>
+                    <h3>Typed Pydantic models</h3>
+                    <p>Action, Observation, and State inherit from <code>openenv.core.env_server.types</code>. <code>/schema</code> returns all three.</p>
+                </div>
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">02</div>
+                    <h3>Dense reward signal</h3>
+                    <p>+10 base, +25 MAYDAY, +10 medical, +15 fuel-save, up to +10 passenger bonus, −100 per crash, +50 perfect episode.</p>
+                </div>
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">03</div>
+                    <h3>Deterministic graders</h3>
+                    <p>Every task has a pure function from landing and crash logs to a score in [0, 1]. Same episode, same score — always.</p>
+                </div>
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">04</div>
+                    <h3>OpenAI inference.py</h3>
+                    <p>Strict <code>[START]</code> / <code>[STEP]</code> / <code>[END]</code> stdout. Reads <code>API_BASE_URL</code> / <code>MODEL_NAME</code> / <code>HF_TOKEN</code>.</p>
+                </div>
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">05</div>
+                    <h3>Docker &amp; HF Space</h3>
+                    <p>Single-stage Python 3.12 image on port 7860. Runs inside the 2 vCPU / 8 GB hackathon budget.</p>
+                </div>
+                <div class="sk-spec-card">
+                    <div class="sk-spec-icon">06</div>
+                    <h3>Canonical endpoints</h3>
+                    <p><code>/reset</code>, <code>/step</code>, <code>/state</code>, <code>/schema</code>, <code>/mcp</code>, <code>/health</code>, <code>/metadata</code>, <code>/ws</code> — all wired by OpenEnv core.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= Footer ================= -->
+    <footer class="sk-footer">
+        <div class="sk-container">
+            <p>SUPERCELL — Monsoon Mumbai ATC Emergency Triage</p>
+            <p class="sk-footer-sub">Built with FastAPI, Pydantic v2, and openenv-core for the Meta PyTorch OpenEnv Hackathon.</p>
+        </div>
+    </footer>
 
     <script src="/static/radar.js"></script>
 </body>

@@ -2,10 +2,15 @@ spec_version: 1
 name: supercell
 type: space
 runtime: fastapi
-app: app:create_app
+app: server.app:app
+entrypoint: server.app:main
 port: 7860
 version: "1.0.0"
-description: "SUPERCELL — Simplified ATC emergency triage for Meta PyTorch Hackathon."
+description: >-
+  SUPERCELL — Monsoon Mumbai ATC Emergency Triage. OpenEnv-compliant
+  environment set at VABB (Chhatrapati Shivaji Intl, Mumbai) during
+  monsoon operations. Agents play the Tower Controller, sequencing
+  landings under fuel, weather, wake-turbulence, and emergency constraints.
 action: ATCAction
 observation: ATCObservation
 
@@ -29,8 +34,11 @@ graders:
 
 tasks:
   - id: easy
-    name: "Clear Skies Priority"
-    description: "4 inbound flights under clear skies. One MAYDAY fuel emergency and one PAN-PAN with medical passenger."
+    name: "Winter Haze"
+    description: >-
+      Calm November dawn at VABB. Four inbounds under clear skies — one
+      MAYDAY fuel emergency (AIC852) and one medical PAN-PAN (IGO6E227).
+      Priority call is unambiguous; solvable by a naive priority-first policy.
     grader:
       id: easy
       type: deterministic
@@ -38,8 +46,12 @@ tasks:
       scoring_range: [0.0, 1.0]
 
   - id: medium
-    name: "Storm Window"
-    description: "7 inbound flights with a storm approaching. Balance fuel urgency against shrinking weather window."
+    name: "Pre-Monsoon Squall"
+    description: >-
+      May afternoon, Arabian Sea squall line rolling in. Seven inbounds.
+      Visibility deteriorates from 8 nm to 1 nm over ~14 steps, then eases.
+      BAW139 (3 nm minima) and UAE504 (SUPER wake) must land in the open
+      window while AIC132 MAYDAY and low-fuel AXB471 race the clock.
     grader:
       id: medium
       type: deterministic
@@ -47,8 +59,14 @@ tasks:
       scoring_range: [0.0, 1.0]
 
   - id: hard
-    name: "Mass Diversion Crisis"
-    description: "12 aircraft diverted with three MAYDAYs, two PAN-PANs, fuel traps, and oscillating weather."
+    name: "Mumbai Monsoon Surge"
+    description: >-
+      July peak monsoon at VABB. Twelve diverted aircraft, three MAYDAYs,
+      two PAN-PANs. Traps: IGO6E2043 is a weather-blocked MAYDAY, IGO6E5393
+      is a silent fuel trap (NONE status, 4 min fuel), and UAE504 is a
+      SUPER-wake A380 that creates cascading separation penalties if
+      mis-sequenced. Optimal play requires fuel-first sequencing that
+      overrides emergency-label heuristics. Frontier models consistently fail.
     grader:
       id: hard
       type: deterministic
@@ -57,7 +75,11 @@ tasks:
 
   - id: extra_hard
     name: "Total System Chaos"
-    description: "20 aircraft in a total system failure scenario. Five MAYDAYs with fuel critical (<8 min), four PAN-PANs with medical emergencies, VFR aircraft that need 4-5nm visibility, and extreme weather volatility."
+    description: >-
+      Hidden bonus. Twenty aircraft, five MAYDAYs with critical fuel, four
+      medical PAN-PANs, VFR-only business jets, a SUPER-wake A380, and a
+      weather timeline that oscillates from 0.5 nm to 6 nm four times over
+      80 steps. Not required for spec compliance.
     grader:
       id: extra_hard
       type: deterministic

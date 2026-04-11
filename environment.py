@@ -1,172 +1,312 @@
-"""Simplified ATC environment for hackathon."""
+"""SUPERCELL — VABB Mumbai ATC Emergency Triage Environment.
 
-from typing import Optional, List, Dict, Any
-from dataclasses import replace
+Implements the canonical `openenv.core.env_server.interfaces.Environment`
+contract so that `create_app()` from `openenv.core.env_server.http_server`
+can wire `/reset`, `/step`, `/state`, `/schema`, `/health`, `/metadata`,
+`/mcp`, and `/ws` for free.
 
-from models import ATCState, ATCObservation, ATCAction, Flight, Weather, FlightInfo, WeatherInfo, EmergencyLevel
-from tasks import TASKS
-from graders import grade_episode
-
-
-class ATCEnvironment:
-    """ATC Triage Environment - simplified for hackathon."""
-    
-    INSTRUCTIONS = """
-You are an Air Traffic Controller managing emergency landings.
-
-TASK: Prioritize landing order for inbound flights under fuel, weather, and emergency constraints.
-
-RULES:
-1. Landing takes 1 time step per flight
-2. After landing, runway is blocked for separation steps (wake turbulence)
-3. Flights CANNOT land if weather visibility < aircraft minimum visibility
-4. Flights with fuel < 0 CRASH
-
-PRIORITIES (highest first):
-1. MAYDAY (life-threatening emergency)
-2. PAN-PAN (urgent but stable)  
-3. Medical onboard
-4. Low fuel
-5. Passenger count
-
-STRATEGY:
-- Land MAYDAYs immediately if weather permits
-- Check weather vs aircraft minimums before landing
-- Manage runway separation (heavy aircraft block longer)
-- Balance fuel urgency with weather windows
-
-ACTION: Provide flight_index (0-based position in flights list) to land next.
+The reward function is dense and partial-progress — it signals fuel
+management, priority handling, medical urgency, and weather-aware
+sequencing throughout the trajectory, not just at termination.
 """
-    
-    def __init__(self):
-        self.state: ATCState = ATCState()
-    
-    def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None) -> ATCObservation:
-        """Reset environment with selected task."""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import EnvironmentMetadata
+
+from graders import grade_episode
+from models import (
+    ATCAction,
+    ATCObservation,
+    ATCState,
+    EmergencyLevel,
+    Flight,
+    FlightInfo,
+    WakeCategory,
+    Weather,
+    WeatherInfo,
+)
+from tasks import TASKS
+
+
+# =============================================================================
+# Wake-turbulence separation (leader → follower) — ICAO Doc 4444
+# =============================================================================
+
+_WAKE_SEPARATION: dict[tuple[WakeCategory, WakeCategory], int] = {
+    (WakeCategory.SUPER, WakeCategory.LIGHT): 4,
+    (WakeCategory.SUPER, WakeCategory.MEDIUM): 4,
+    (WakeCategory.SUPER, WakeCategory.HEAVY): 3,
+    (WakeCategory.SUPER, WakeCategory.SUPER): 2,
+    (WakeCategory.HEAVY, WakeCategory.LIGHT): 3,
+    (WakeCategory.HEAVY, WakeCategory.MEDIUM): 3,
+    (WakeCategory.HEAVY, WakeCategory.HEAVY): 2,
+    (WakeCategory.HEAVY, WakeCategory.SUPER): 2,
+    (WakeCategory.MEDIUM, WakeCategory.LIGHT): 3,
+    (WakeCategory.MEDIUM, WakeCategory.MEDIUM): 2,
+    (WakeCategory.MEDIUM, WakeCategory.HEAVY): 2,
+    (WakeCategory.MEDIUM, WakeCategory.SUPER): 2,
+    (WakeCategory.LIGHT, WakeCategory.LIGHT): 2,
+    (WakeCategory.LIGHT, WakeCategory.MEDIUM): 2,
+    (WakeCategory.LIGHT, WakeCategory.HEAVY): 2,
+    (WakeCategory.LIGHT, WakeCategory.SUPER): 2,
+}
+
+
+INSTRUCTIONS = (
+    "You are the Tower Controller at VABB (Chhatrapati Shivaji Intl, "
+    "Mumbai) during monsoon operations. Inbound flights are on approach "
+    "via STAR fixes PARAR, GUDOM, NOMUS, LEKIT. Your job is to sequence "
+    "landings on a single active runway under fuel, weather, and "
+    "emergency constraints.\n\n"
+    "RULES:\n"
+    "  1. Landing takes 1 time step.\n"
+    "  2. After a landing, the runway is blocked for wake-separation steps.\n"
+    "  3. A flight cannot land if airport visibility < its min_visibility_nm.\n"
+    "  4. Every step, every airborne flight burns 1 min of fuel. Fuel<=0 crashes.\n\n"
+    "PRIORITY (soft — agent decides):\n"
+    "  MAYDAY > PAN-PAN > medical_onboard > low fuel > passenger count.\n\n"
+    "ACTION: return {\"flight_index\": i} where i is the 0-based "
+    "position into observation.flights."
+)
+
+
+class ATCEnvironment(Environment[ATCAction, ATCObservation, ATCState]):
+    """VABB Mumbai ATC emergency triage environment (OpenEnv-compliant)."""
+
+    SUPPORTS_CONCURRENT_SESSIONS: bool = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._state: ATCState = ATCState()
+        self._last_landed_wake: Optional[WakeCategory] = None
+
+    # ------------------------------------------------------------------
+    # Canonical Environment contract
+    # ------------------------------------------------------------------
+
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ATCObservation:
+        """Load a task scenario and return the initial observation.
+
+        `episode_id` is interpreted as the task id (easy/medium/hard/extra_hard).
+        """
         task_id = episode_id or "easy"
         if task_id not in TASKS:
             task_id = "easy"
-        
-        task_data = TASKS[task_id]()
-        
-        self.state = ATCState(
+
+        data = TASKS[task_id]()
+        self._state = ATCState(
+            episode_id=task_id,
+            step_count=0,
             task_id=task_id,
-            task_name=task_data["task_name"],
+            task_name=data["task_name"],
             time_step=0,
             landed_safely=0,
             crashed=0,
-            total_flights=len(task_data["flights"]),
-            flights=task_data["flights"][:],
-            weather=task_data["weather"],
+            total_flights=len(data["flights"]),
+            flights=list(data["flights"]),
+            weather=data["weather"],
             runway_free_in_steps=0,
             landing_log=[],
             crash_log=[],
-            max_steps=task_data["max_steps"],
-            separation_steps=task_data["separation_steps"],
-            weather_timeline=task_data.get("weather_timeline", []),
+            max_steps=data["max_steps"],
+            separation_steps=data["separation_steps"],
+            weather_timeline=list(data.get("weather_timeline", [])),
             episode_reward=0.0,
         )
-        
-        return self._get_observation()
-    
-    def step(self, action: ATCAction) -> ATCObservation:
-        """Execute one step: land a flight."""
-        if not self.state.flights:
-            return self._get_observation()
-        
+        self._last_landed_wake = None
+        self._apply_weather_timeline(step=0)
+        return self._build_observation(reward=0.0, done=False)
+
+    def step(
+        self,
+        action: ATCAction,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> ATCObservation:
+        """Execute one ATC decision and advance the simulation by one step."""
+        # If episode already finished, return a terminal observation.
+        if (
+            len(self._state.flights) == 0
+            or self._state.time_step >= self._state.max_steps
+        ):
+            return self._build_observation(reward=0.0, done=True)
+
         idx = action.flight_index
-        if idx < 0 or idx >= len(self.state.flights):
-            idx = 0
-        
-        flight = self.state.flights[idx]
-        
-        # Check if can land (weather, runway)
-        can_land = self._can_land(flight)
-        
+
+        # Invalid index — penalize but still advance time
+        if idx < 0 or idx >= len(self._state.flights):
+            reward = -5.0
+            reward -= 0.5 * len(self._state.flights)
+            crashes = self._advance_time()
+            if crashes > 0:
+                reward -= 100.0 * crashes
+            self._state.episode_reward += reward
+            self._state.step_count += 1
+            done = (
+                len(self._state.flights) == 0
+                or self._state.time_step >= self._state.max_steps
+            )
+            return self._build_observation(reward=reward, done=done)
+
+        flight = self._state.flights[idx]
+        reward = 0.0
+
+        can_land, reason = self._can_land(flight)
         if can_land:
-            # Land the flight
-            self.state.landed_safely += 1
-            self.state.runway_free_in_steps = self.state.separation_steps
-            
-            # Log landing
-            self.state.landing_log.append({
-                "step": self.state.time_step,
+            reward += self._landing_reward(flight)
+            self._state.landed_safely += 1
+            self._state.runway_free_in_steps = self._separation_for(flight.wake_category)
+            self._last_landed_wake = flight.wake_category
+            self._state.landing_log.append({
+                "step": self._state.time_step,
                 "callsign": flight.callsign,
                 "emergency": flight.emergency.name,
                 "medical_onboard": flight.medical_onboard,
                 "fuel_on_landing": flight.fuel_minutes,
+                "passengers": flight.passengers,
+                "wake_category": flight.wake_category.name,
                 "landed_safely": True,
             })
-            
-            # Remove flight
-            self.state.flights.pop(idx)
-            reward = 1.0
+            self._state.flights.pop(idx)
         else:
-            # Cannot land - time passes, fuel burns
-            reward = -0.1
-        
-        # Advance time
-        self._advance_time()
-        
-        # Update episode reward
-        self.state.episode_reward += reward
-        
-        # Check done
-        done = len(self.state.flights) == 0 or self.state.time_step >= self.state.max_steps
-        
-        obs = self._get_observation()
-        obs.done = done
-        obs.reward = reward
-        return obs
-    
-    def _can_land(self, flight: Flight) -> bool:
-        """Check if flight can land."""
-        # Runway must be free
-        if self.state.runway_free_in_steps > 0:
-            return False
-        
-        # Weather must be above minimum
-        if self.state.weather.visibility_nm < flight.min_visibility_nm:
-            return False
-        
-        return True
-    
-    def _advance_time(self):
-        """Advance time step, update fuel, weather, check crashes."""
-        self.state.time_step += 1
-        
-        # Decrement runway timer
-        if self.state.runway_free_in_steps > 0:
-            self.state.runway_free_in_steps -= 1
-        
-        # Update weather from timeline
-        for entry in self.state.weather_timeline:
-            if entry["step"] == self.state.time_step:
-                self.state.weather.visibility_nm = entry["visibility_nm"]
-                self.state.weather.trend = entry["trend"]
-                self.state.weather.precipitation = entry["precipitation"]
-                break
-        
-        # Burn fuel, check crashes
-        crashed = []
-        for i, flight in enumerate(self.state.flights):
+            if reason == "weather":
+                reward -= 3.0
+            else:
+                reward -= 1.0
+
+        # Dense holding cost — time pressure scales with queue length
+        reward -= 0.5 * len(self._state.flights)
+
+        crashes = self._advance_time()
+        if crashes > 0:
+            reward -= 100.0 * crashes
+
+        done = (
+            len(self._state.flights) == 0
+            or self._state.time_step >= self._state.max_steps
+        )
+        if done and len(self._state.flights) == 0 and self._state.crashed == 0:
+            reward += 50.0  # Perfect episode bonus
+
+        self._state.episode_reward += reward
+        self._state.step_count += 1
+        return self._build_observation(reward=reward, done=done)
+
+    @property
+    def state(self) -> ATCState:
+        """Current internal state (exposed via /state)."""
+        return self._state
+
+    def get_metadata(self) -> EnvironmentMetadata:
+        return EnvironmentMetadata(
+            name="supercell",
+            description=(
+                "SUPERCELL — Monsoon Mumbai ATC Emergency Triage. "
+                "An OpenEnv-compliant environment set at VABB (Chhatrapati "
+                "Shivaji Intl, Mumbai) where the agent plays Tower Controller "
+                "during monsoon operations, sequencing landings under fuel, "
+                "weather, wake-turbulence, and emergency constraints."
+            ),
+            version="1.0.0",
+            author="SUPERCELL Team",
+        )
+
+    def close(self) -> None:
+        """No-op — environment state persists across HTTP calls in simulation mode."""
+        return None
+
+    # ------------------------------------------------------------------
+    # Custom (not part of OpenEnv base contract)
+    # ------------------------------------------------------------------
+
+    def grade(self) -> float:
+        """Deterministic [0, 1] score for the current episode."""
+        return grade_episode(
+            self._state.landing_log,
+            self._state.crash_log,
+            self._state.total_flights,
+            self._state.time_step,
+            self._state.max_steps,
+            self._state.task_id,
+        )
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _can_land(self, flight: Flight) -> tuple[bool, str]:
+        if self._state.runway_free_in_steps > 0:
+            return (False, "runway")
+        if self._state.weather.visibility_nm < flight.min_visibility_nm:
+            return (False, "weather")
+        return (True, "ok")
+
+    def _separation_for(self, follower_wake: WakeCategory) -> int:
+        if self._last_landed_wake is None:
+            return self._state.separation_steps
+        leader = self._last_landed_wake
+        return _WAKE_SEPARATION.get((leader, follower_wake), self._state.separation_steps)
+
+    def _landing_reward(self, flight: Flight) -> float:
+        base = 10.0
+        if flight.emergency == EmergencyLevel.MAYDAY:
+            base += 25.0
+        elif flight.emergency == EmergencyLevel.PAN_PAN:
+            base += 12.0
+        if flight.medical_onboard:
+            base += 10.0
+        if flight.fuel_minutes < 5:
+            base += 15.0
+        elif flight.fuel_minutes < 10:
+            base += 5.0
+        base += min(10.0, flight.passengers / 50.0)
+        return base
+
+    def _advance_time(self) -> int:
+        self._state.time_step += 1
+        if self._state.runway_free_in_steps > 0:
+            self._state.runway_free_in_steps -= 1
+        self._apply_weather_timeline(step=self._state.time_step)
+
+        crashed_indices: list[int] = []
+        for i, flight in enumerate(self._state.flights):
             flight.fuel_minutes -= 1.0
             if flight.fuel_minutes <= 0:
-                crashed.append(i)
-                self.state.crash_log.append({
-                    "step": self.state.time_step,
+                crashed_indices.append(i)
+                self._state.crash_log.append({
+                    "step": self._state.time_step,
                     "callsign": flight.callsign,
-                    "reason": "out_of_fuel",
+                    "reason": "fuel_exhaustion",
                     "emergency": flight.emergency.name,
+                    "medical_onboard": flight.medical_onboard,
+                    "passengers": flight.passengers,
                 })
-        
-        # Remove crashed flights (reverse order)
-        for i in reversed(crashed):
-            self.state.flights.pop(i)
-            self.state.crashed += 1
-    
-    def _get_observation(self) -> ATCObservation:
-        """Build observation from current state."""
+        for i in reversed(crashed_indices):
+            self._state.flights.pop(i)
+            self._state.crashed += 1
+        return len(crashed_indices)
+
+    def _apply_weather_timeline(self, step: int) -> None:
+        for entry in self._state.weather_timeline:
+            if entry.get("step") == step:
+                if "visibility_nm" in entry:
+                    self._state.weather.visibility_nm = entry["visibility_nm"]
+                if "trend" in entry:
+                    self._state.weather.trend = entry["trend"]
+                if "precipitation" in entry:
+                    self._state.weather.precipitation = entry["precipitation"]
+                break
+
+    def _build_observation(self, reward: float, done: bool) -> ATCObservation:
         flights_info = [
             FlightInfo(
                 index=i,
@@ -179,12 +319,13 @@ ACTION: Provide flight_index (0-based position in flights list) to land next.
                 medical_onboard=f.medical_onboard,
                 min_visibility_nm=f.min_visibility_nm,
                 wake_category=f.wake_category.name,
-                can_land_now=self._can_land(f),
+                can_land_now=self._can_land(f)[0],
+                bearing_deg=f.bearing_deg,
+                approach_fix=f.approach_fix,
             )
-            for i, f in enumerate(self.state.flights)
+            for i, f in enumerate(self._state.flights)
         ]
-        
-        w = self.state.weather
+        w = self._state.weather
         weather_info = WeatherInfo(
             visibility_nm=w.visibility_nm,
             wind_knots=w.wind_knots,
@@ -193,31 +334,19 @@ ACTION: Provide flight_index (0-based position in flights list) to land next.
             precipitation=w.precipitation,
             trend=w.trend,
         )
-        
         return ATCObservation(
+            done=done,
+            reward=reward,
             flights=flights_info,
             weather=weather_info,
-            runway_free_in_steps=self.state.runway_free_in_steps,
-            time_step=self.state.time_step,
-            max_time_steps=self.state.max_steps,
-            landed_safely=self.state.landed_safely,
-            crashed=self.state.crashed,
-            total_flights=self.state.total_flights,
-            task_id=self.state.task_id,
-            task_name=self.state.task_name,
-            done=len(self.state.flights) == 0 or self.state.time_step >= self.state.max_steps,
-            reward=0.0,
-            episode_reward=self.state.episode_reward,
-            instructions=self.INSTRUCTIONS,
-        )
-    
-    def grade(self) -> float:
-        """Grade the current episode."""
-        return grade_episode(
-            self.state.landing_log,
-            self.state.crash_log,
-            self.state.total_flights,
-            self.state.time_step,
-            self.state.max_steps,
-            self.state.task_id,
+            runway_free_in_steps=self._state.runway_free_in_steps,
+            time_step=self._state.time_step,
+            max_time_steps=self._state.max_steps,
+            landed_safely=self._state.landed_safely,
+            crashed=self._state.crashed,
+            total_flights=self._state.total_flights,
+            task_id=self._state.task_id,
+            task_name=self._state.task_name,
+            episode_reward=self._state.episode_reward,
+            instructions=INSTRUCTIONS,
         )

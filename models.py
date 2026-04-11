@@ -1,14 +1,31 @@
-"""Simplified ATC models for hackathon submission."""
+"""SUPERCELL — OpenEnv-compliant Pydantic models.
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+Action, Observation, and State all inherit from the canonical
+`openenv.core.env_server.types` base classes so that the serializer
+in `openenv.core.env_server.http_server` can round-trip payloads
+correctly, and so `/schema` exposes all three schemas.
+
+VABB Mumbai ATC Emergency Triage environment.
+"""
+
+from __future__ import annotations
+
 from enum import IntEnum
+from typing import Any
+
+from openenv.core.env_server.types import Action, Observation, State
+from pydantic import BaseModel, ConfigDict, Field
+
+
+# =============================================================================
+# Enums
+# =============================================================================
 
 
 class EmergencyLevel(IntEnum):
     NONE = 0
-    PAN_PAN = 1
-    MAYDAY = 2
+    PAN_PAN = 1  # Urgent, not life-threatening
+    MAYDAY = 2   # Life-threatening
 
 
 class WakeCategory(IntEnum):
@@ -18,9 +35,16 @@ class WakeCategory(IntEnum):
     SUPER = 4
 
 
-@dataclass
-class Flight:
-    """Inbound flight for landing."""
+# =============================================================================
+# Domain models (internal use — not inherited from Action/Observation)
+# =============================================================================
+
+
+class Flight(BaseModel):
+    """Inbound flight on approach to VABB (internal simulation object)."""
+
+    model_config = ConfigDict(use_enum_values=False, arbitrary_types_allowed=True)
+
     callsign: str
     aircraft_type: str
     emergency: EmergencyLevel = EmergencyLevel.NONE
@@ -31,11 +55,13 @@ class Flight:
     medical_onboard: bool = False
     min_visibility_nm: float = 1.0
     wake_category: WakeCategory = WakeCategory.MEDIUM
+    bearing_deg: float = 90.0
+    approach_fix: str = "PARAR"
 
 
-@dataclass
-class Weather:
-    """Airport weather conditions."""
+class Weather(BaseModel):
+    """VABB airport weather snapshot (internal)."""
+
     visibility_nm: float = 10.0
     wind_knots: float = 8.0
     crosswind_knots: float = 3.0
@@ -44,9 +70,16 @@ class Weather:
     trend: str = "stable"
 
 
-@dataclass
-class FlightInfo:
-    """Flight data for API responses."""
+# =============================================================================
+# Payload sub-models (appear inside the observation)
+# =============================================================================
+
+
+class FlightInfo(BaseModel):
+    """Flight as serialized into the observation payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
     index: int
     callsign: str
     aircraft_type: str
@@ -58,11 +91,13 @@ class FlightInfo:
     min_visibility_nm: float
     wake_category: str
     can_land_now: bool = True
+    bearing_deg: float = 90.0
+    approach_fix: str = "PARAR"
 
 
-@dataclass  
-class WeatherInfo:
-    """Weather data for API responses."""
+class WeatherInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     visibility_nm: float = 10.0
     wind_knots: float = 0.0
     crosswind_knots: float = 0.0
@@ -71,17 +106,34 @@ class WeatherInfo:
     trend: str = "stable"
 
 
-@dataclass
-class ATCAction:
-    """Agent action - which flight to land."""
-    flight_index: int = 0
+# =============================================================================
+# OpenEnv contract classes (Action / Observation / State)
+# =============================================================================
 
 
-@dataclass
-class ATCObservation:
-    """Environment observation."""
-    flights: List[FlightInfo] = field(default_factory=list)
-    weather: WeatherInfo = field(default_factory=WeatherInfo)
+class ATCAction(Action):
+    """Agent action: clear a specific inbound flight to land.
+
+    Inherits `metadata: Dict[str, Any]` from the canonical Action base.
+    """
+
+    flight_index: int = Field(
+        default=0,
+        ge=0,
+        description="0-based index into observation.flights — which flight to land next.",
+    )
+
+
+class ATCObservation(Observation):
+    """VABB tower observation returned by `reset()` and `step()`.
+
+    Inherits `done`, `reward`, and `metadata` from the canonical
+    Observation base (the HTTP serializer pulls `reward` and `done`
+    out to the response envelope).
+    """
+
+    flights: list[FlightInfo] = Field(default_factory=list)
+    weather: WeatherInfo = Field(default_factory=WeatherInfo)
     runway_free_in_steps: int = 0
     time_step: int = 0
     max_time_steps: int = 50
@@ -90,15 +142,17 @@ class ATCObservation:
     total_flights: int = 0
     task_id: str = "easy"
     task_name: str = ""
-    done: bool = False
-    reward: float = 0.0
     episode_reward: float = 0.0
     instructions: str = ""
 
 
-@dataclass
-class ATCState:
-    """Internal episode state."""
+class ATCState(State):
+    """Internal episode state.
+
+    Inherits `episode_id` and `step_count` from the canonical State base.
+    Uses `extra="allow"` to tolerate the domain fields we append.
+    """
+
     task_id: str = "easy"
     task_name: str = ""
     time_step: int = 0
@@ -106,11 +160,11 @@ class ATCState:
     crashed: int = 0
     total_flights: int = 0
     episode_reward: float = 0.0
-    flights: List[Flight] = field(default_factory=list)
-    weather: Weather = field(default_factory=Weather)
+    flights: list[Flight] = Field(default_factory=list)
+    weather: Weather = Field(default_factory=Weather)
     runway_free_in_steps: int = 0
-    landing_log: List[Dict[str, Any]] = field(default_factory=list)
-    crash_log: List[Dict[str, Any]] = field(default_factory=list)
+    landing_log: list[dict[str, Any]] = Field(default_factory=list)
+    crash_log: list[dict[str, Any]] = Field(default_factory=list)
     max_steps: int = 50
     separation_steps: int = 2
-    weather_timeline: List[Dict] = field(default_factory=list)
+    weather_timeline: list[dict[str, Any]] = Field(default_factory=list)

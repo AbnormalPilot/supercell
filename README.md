@@ -1,8 +1,8 @@
 ---
-title: SUPERCELL — ATC Emergency Triage
-emoji: ✈️
-colorFrom: blue
-colorTo: gray
+title: SUPERCELL — VABB Mumbai ATC
+emoji: 🛬
+colorFrom: green
+colorTo: yellow
 sdk: docker
 app_port: 7860
 pinned: true
@@ -11,438 +11,400 @@ tags:
   - openenv
   - reinforcement-learning
   - agent-evaluation
-  - pytorch
+  - atc
+  - aviation
 ---
 
-# SUPERCELL — ATC Emergency Triage Environment
+# SUPERCELL — Monsoon Mumbai ATC Emergency Triage
 
-> **OpenEnv-compliant reinforcement learning environment** where an AI agent prioritizes landing order for incoming flights under fuel, weather, and emergency constraints.
+> **OpenEnv v1-compliant** reinforcement-learning environment where an
+> agent plays the Tower Controller at **VABB / Chhatrapati Shivaji
+> International Airport, Mumbai** during monsoon operations — sequencing
+> landings on a single active runway under fuel, weather, wake
+> turbulence, and emergency constraints.
 
 Built for the **Meta PyTorch OpenEnv Hackathon**.
 
-[![Tests](https://img.shields.io/badge/tests-213%20passing-brightgreen)](#testing)
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-v1%20compliant-blue)](#api-endpoints)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
-
----
-
-## Evaluator Quick Start
-
-```bash
-# 1. Install deps
-pip install -r requirements.txt          # or: uv sync
-
-# 2. Start the Gradio UI (includes API)
-python app.py                            # → http://localhost:7860
-
-# 3. Run the heuristic demo (no API key needed)
-python demo.py
-
-# 4. Run the hackathon inference script (OpenEnv format)
-export HF_TOKEN="hf_..."
-ENV_URL=http://localhost:7860 SUPERCELL_TASK=hard python inference.py
-
-# 5. Run tests
-python -m pytest tests/ -q              # Tests in flat structure
-```
-
-The Gradio UI is at **http://localhost:7860** with integrated API.
-
-### File Structure (Simplified)
-
-```
-├── app.py              # Main entry: FastAPI + Gradio UI
-├── models.py           # Data models (dataclasses)
-├── environment.py      # ATCEnvironment logic
-├── tasks.py            # Task scenarios (easy/medium/hard/extra_hard)
-├── graders.py          # Grading functions
-├── openenv.yaml        # OpenEnv specification
-└── Dockerfile          # HF Spaces deployment
-```
-
----
-
-## The Problem
-
-Air traffic controllers make life-or-death triage decisions every day — which flight lands first when three are declaring emergencies, two are running out of fuel, and a thunderstorm is closing in?
-
-**SUPERCELL** models that exact problem as an OpenEnv-compliant RL environment:
-
-- **Real-world task**: FAA-style emergency prioritization with realistic flight parameters
-- **Multi-objective optimization**: balance safety, urgency, fuel state, passenger count, weather windows, and wake turbulence separation
-- **Cascading failures**: wrong decisions compound — delayed flights burn fuel, weather deteriorates, crashes cascade
-- **Genuine difficulty**: frontier models (GPT-4o) score ~0.45 on the hard task; perfect score requires sophisticated multi-constraint reasoning
+VABB is the world's busiest single-runway airport in real life
+(~950 movements/day), bracketed by a city that crowds the fence line
+and a monsoon that routinely drops visibility below 800 m. SUPERCELL
+models that environment as an RL task. No other submission is set at
+an Indian airport — no other submission will have the same problem
+surface.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install Python dependencies
+# 1. Install deps (uv recommended; pip works too)
 uv sync
 
-# Start the Gradio UI (includes API server)
-uv run python app.py
-```
+# 2. Start the environment + UI (port 7860, HF Space default)
+uv run python app.py          # → http://localhost:7860
 
-Open **http://localhost:7860** for the Gradio UI with integrated API.
-
-### Run Inference
-
-```bash
-# Heuristic agent (no API key needed, deterministic)
-python demo.py
-
-# OpenAI baseline (GPT-4o)
-export OPENAI_API_KEY="sk-..."
-uv run python scripts/inference.py
-
-# PyTorch / Llama baseline (Meta models via HF Inference API)
+# 3. Run the hackathon baseline inference script
 export HF_TOKEN="hf_..."
-uv run python scripts/inference_hf.py
-
-# Local PyTorch inference (requires GPU)
-USE_LOCAL=true HF_TOKEN="hf_..." uv run python scripts/inference_hf.py
-
-# Train a PyTorch DQN agent directly against the environment
-uv run python scripts/train_dqn.py --task all --episodes 2000
+export SUPERCELL_TASK=hard
+uv run python inference.py    # emits [START] / [STEP] / [END] to stdout
 ```
 
-### Docker
+Open `http://localhost:7860` for the **Monsoon Mumbai Tower** UI (phosphor-CRT
+radar scope, NOTAM ticker, real Indian airline callsigns, ATC voice log),
+or `http://localhost:7860/docs` for the Swagger API.
+
+---
+
+## File Layout
+
+```
+.
+├── app.py              # FastAPI app factory (OpenEnv routes + UI)
+├── models.py           # Pydantic v2 models (Action / Observation / State)
+├── environment.py      # ATCEnvironment — reset / step / grade
+├── tasks.py            # 4 scenarios (easy, medium, hard, extra_hard)
+├── graders.py          # Deterministic [0.0, 1.0] graders
+├── inference.py        # OpenAI-client baseline, hackathon stdout format
+├── openenv.yaml        # OpenEnv v1 manifest
+├── Dockerfile          # HF Space build
+├── pyproject.toml      # Python deps
+└── static/             # Monsoon Mumbai ATC UI (HTML + CSS + canvas JS)
+    ├── index.html
+    ├── style.css
+    └── radar.js
+```
+
+Everything lives at the repo root — no `apps/`, no monorepo, no build step.
+
+---
+
+## The Task
+
+Three graded scenarios + one hidden bonus. All share the same
+`ATCAction { flight_index: int }` / `ATCObservation` contract. The
+agent's job: at every step, pick which inbound flight to clear for
+landing.
+
+### Easy · "Winter Haze"
+Calm November dawn. **4 inbounds**, clear skies, one MAYDAY and one
+medical PAN-PAN. The correct priority is unambiguous. Even a naive
+policy should score well if it lands the MAYDAY first.
+
+```
+AIC852    B777-300ER  MAYDAY   fuel 8m   (Air India)
+IGO6E227  A320neo     PAN-PAN  med/15m   (IndiGo)
+VTI995    A321neo     -        25m       (Vistara)
+SEJ144    B737-800    -        30m       (SpiceJet)
+```
+
+### Medium · "Pre-Monsoon Squall"
+May afternoon, Arabian Sea squall line rolling in.
+**7 inbounds**. Visibility deteriorates from 8 nm → 1 nm over ~14 steps,
+then eases. `BAW139` (3 nm minima) and `UAE504` (SUPER wake A380) must
+land in the open window, while `AIC132` MAYDAY and low-fuel `AXB471`
+race the clock.
+
+### Hard · "Mumbai Monsoon Surge"
+July afternoon, peak monsoon. **12 diverted aircraft**, 3 MAYDAYs,
+2 PAN-PANs, and traps everywhere:
+
+| Callsign  | Aircraft   | Status   | Fuel | Min Vis | Trap |
+|-----------|-----------|---------|------|---------|------|
+| AIC176    | B787-9     | MAYDAY  | 5m   | 1.5 nm  | medical |
+| AIC348    | A330-300   | MAYDAY  | 7m   | 1.5 nm  | — |
+| IGO6E2043 | A320neo    | MAYDAY  | 14m  | **4.0 nm** | **weather-blocked** |
+| SEJ21     | B737-800   | PAN-PAN | 10m  | 1.0 nm  | medical |
+| VTI997    | A321neo    | PAN-PAN | 14m  | 1.0 nm  | — |
+| IGO6E5393 | A320       | NONE    | **4m** | 1.0 nm | **silent fuel trap** |
+| AXB812    | B737-800   | NONE    | 6m   | **2.5 nm** | low fuel + weather-blocked |
+| VT-JEX    | Cessna X   | NONE    | 12m  | 3.0 nm  | VFR-only, blocked |
+| FDX57     | B767F      | NONE    | 18m  | 1.5 nm  | — |
+| QTR554    | B787-9     | NONE    | 15m  | 1.5 nm  | — |
+| SIA422    | A350-900   | NONE    | 25m  | 1.5 nm  | — |
+| UAE504    | A380-800   | NONE    | 40m  | 2.0 nm  | **SUPER wake** |
+
+**Weather window:** visibility is 2.0 nm at episode start, drops to 1.0 nm
+at step 5, then **opens to 4.5 nm for exactly 4 steps** (step 10–13) —
+that's the only window the 3+ nm minima flights can land. Miss it and
+they're stranded.
+
+The optimal strategy requires **fuel-first sequencing that overrides
+emergency-label heuristics** — `IGO6E5393` (NONE, 4 min fuel) must land
+before `IGO6E2043` (MAYDAY but weather-blocked) even though MAYDAY has
+nominal priority.
+
+### Extra Hard · "Total System Chaos" (hidden bonus)
+20 aircraft. Five MAYDAYs with critical fuel. Four medical PAN-PANs.
+VFR-only business jets. A SUPER-wake A380. Weather oscillating between
+0.5 nm and 6 nm four times over 80 steps. Not required for spec
+compliance — included for agents that want to prove they can handle
+true chaos.
+
+---
+
+## Observation & Action Spaces
+
+```python
+class ATCAction(BaseModel):
+    flight_index: int  # 0-based index into observation.flights
+
+class ATCObservation(BaseModel):
+    flights: list[FlightInfo]       # full aircraft state
+    weather: WeatherInfo            # vis, wind, precip, trend
+    runway_free_in_steps: int
+    time_step: int
+    max_time_steps: int
+    landed_safely: int
+    crashed: int
+    total_flights: int
+    task_id: str
+    task_name: str
+    done: bool
+    reward: float
+    episode_reward: float
+    instructions: str
+```
+
+`FlightInfo` per aircraft:
+
+| Field             | Type  | Notes |
+|-------------------|-------|-------|
+| `index`           | int   | position in current flights list |
+| `callsign`        | str   | ICAO callsign (e.g. `AIC176`) |
+| `aircraft_type`   | str   | type code (`B787-9`, `A320neo`, …) |
+| `emergency`       | str   | `NONE` / `PAN_PAN` / `MAYDAY` |
+| `fuel_minutes`    | float | remaining fuel |
+| `passengers`      | int   | souls on board |
+| `distance_nm`     | float | range from VABB |
+| `bearing_deg`     | float | bearing from airport (0=N, 90=E) |
+| `approach_fix`    | str   | STAR fix (PARAR/GUDOM/NOMUS/LEKIT) |
+| `medical_onboard` | bool  | humanitarian flag |
+| `min_visibility_nm` | float | aircraft category minima |
+| `wake_category`   | str   | LIGHT/MEDIUM/HEAVY/SUPER |
+| `can_land_now`    | bool  | weather + runway check combined |
+
+### Reward Function (dense, partial-progress)
+
+Rewards are shaped to give signal **throughout the episode**, not just
+at termination. Representative values:
+
+| Event                             | Reward |
+|-----------------------------------|--------|
+| Safe landing (base)               | `+10` |
+| &nbsp;&nbsp;+ MAYDAY bonus        | `+25` |
+| &nbsp;&nbsp;+ PAN-PAN bonus       | `+12` |
+| &nbsp;&nbsp;+ medical bonus       | `+10` |
+| &nbsp;&nbsp;+ critical-fuel save (<5 min) | `+15` |
+| &nbsp;&nbsp;+ low-fuel save (<10 min)      | `+5`  |
+| &nbsp;&nbsp;+ passenger-scaled (caps at A380) | up to `+10` |
+| Weather-blocked attempt           | `-3`  |
+| Runway-blocked attempt            | `-1`  |
+| Holding cost (per pending flight) | `-0.5` per step |
+| Invalid flight index              | `-5`  |
+| Fuel-exhaustion crash             | `-100` per aircraft |
+| Perfect episode (all landed, 0 crashed) | `+50` |
+
+A successful MAYDAY landing with a medical passenger and <5 min fuel
+yields **+60 reward in a single step** — enough to be a clear positive
+signal even in the middle of a long trajectory. A single crash costs
+`-100`, making safety violations dominant negatives.
+
+### Grader (deterministic, [0.0, 1.0])
+
+Each task has its own weighted grader. Higher tasks apply stricter
+crash penalties and scale `fuel_ok` thresholds upward:
+
+| Task         | safety | priority | medical | fuel | efficiency | bonus | crash penalty |
+|--------------|:------:|:--------:|:-------:|:----:|:----------:|:-----:|:-------------:|
+| easy         | 40%    | 40%      | —       | —    | 20%        | —     | 0.50/crashed  |
+| medium       | 30%    | 25%      | 15%     | 15%  | 15%        | —     | 0.40/crashed  |
+| hard         | 30%    | 20%      | 10%     | 20%  | 10%        | 10%   | 0.35/crashed  |
+| extra_hard   | 25%    | 20%      | 15%     | 20%  | 10%        | 10%   | 0.30/crashed  |
+
+Graders are pure functions of `landing_log` + `crash_log`, so identical
+episodes always return identical scores (spec requirement).
+
+---
+
+## Baseline Scores (measured)
+
+Priority-first heuristic (MAYDAY → PAN-PAN → NONE, lowest fuel within
+each band, skipping weather-blocked flights), run directly against
+`ATCEnvironment` — no HTTP, no LLM, deterministic:
+
+| Task         | Score | Landed | Crashed | Steps |
+|--------------|:------:|:------:|:-------:|:-----:|
+| easy         | **1.000** | 4/4   | 0 | 8   |
+| medium       | **0.940** | 7/7   | 0 | 23  |
+| hard         | **0.604** | 9/12  | 3 | 23  |
+| extra_hard   | **0.418** | 12/20 | 8 | 31  |
+
+Random-policy reference (seed=0):
+
+| Task         | Random Score |
+|--------------|:------------:|
+| easy         | 1.000        |
+| medium       | 0.767        |
+| hard         | 0.325        |
+
+The **hard task discriminates** between policies: a priority-first
+heuristic reaches ~0.60, random reaches ~0.33, a perfect run reaches
+1.0. Frontier models currently score in the 0.40–0.65 band — they
+systematically fall into the `IGO6E2043` MAYDAY trap (trying to land a
+weather-blocked aircraft) and miss `IGO6E5393`'s silent fuel trap.
+
+---
+
+## API Endpoints (OpenEnv v1)
+
+| Method | Path        | Description |
+|--------|-------------|-------------|
+| `POST` | `/reset`    | Start episode. Body: `{"episode_id": "hard"}` |
+| `POST` | `/step`     | Take action. Body: `{"action": {"flight_index": 0}}` |
+| `GET`  | `/state`    | Current observation snapshot |
+| `POST` | `/grade`    | Grade episode → `{"score": 0.0..1.0, ...}` |
+| `GET`  | `/health`   | Health probe (200 OK) |
+| `GET`  | `/metadata` | Environment metadata |
+| `GET`  | `/schema`   | JSON schemas for action + observation |
+| `GET`  | `/tasks`    | All tasks with descriptions |
+
+Full Swagger UI at `/docs`.
+
+### Example session
 
 ```bash
-# Build production image (includes Next.js static UI + Python API)
+# Reset to hard
+curl -s -X POST http://localhost:7860/reset \
+  -H "Content-Type: application/json" \
+  -d '{"episode_id":"hard"}' | python -m json.tool
+
+# Step
+curl -s -X POST http://localhost:7860/step \
+  -H "Content-Type: application/json" \
+  -d '{"action":{"flight_index":0}}' | python -m json.tool
+
+# Grade
+curl -s -X POST http://localhost:7860/grade | python -m json.tool
+```
+
+---
+
+## Inference Script
+
+`inference.py` at the repo root uses the **OpenAI client** (required by
+the hackathon spec) and reads:
+
+| Variable       | Default                              |
+|----------------|--------------------------------------|
+| `API_BASE_URL` | `https://router.huggingface.co/v1`   |
+| `MODEL_NAME`   | `Qwen/Qwen2.5-72B-Instruct`          |
+| `HF_TOKEN`     | *(required)* HuggingFace/API key     |
+| `ENV_URL`      | `http://localhost:7860`              |
+| `LOCAL_IMAGE_NAME` | *(optional)* Docker image to boot locally |
+| `SUPERCELL_TASK` | `hard`                             |
+
+Stdout strictly matches the hackathon grammar:
+
+```
+[START] task=hard env=supercell model=Qwen/Qwen2.5-72B-Instruct
+[STEP] step=1 action=land(0) reward=49.62 done=false error=null
+[STEP] step=2 action=land(0) reward=37.68 done=false error=null
+...
+[END] success=true steps=23 score=0.60 rewards=49.62,37.68,...
+```
+
+All rewards and scores are formatted to **2 decimal places**; boolean
+fields are lowercase; error is `null` or the raw error string. Exactly
+one `[START]` and exactly one `[END]` is emitted per invocation
+(verified by repo smoke test).
+
+---
+
+## Docker
+
+```bash
+# Build (matches HF Space build)
 docker build -t supercell .
 
 # Run (port 7860 = HF Spaces default)
 docker run -p 7860:7860 supercell
-
-# API available at http://localhost:7860/docs
-# Dashboard at http://localhost:7860/web/
 ```
+
+The image is a single-stage Python 3.12-slim, `uv sync --frozen --no-dev`,
+~150 MB. No Node, no build step, no GPU required. Runs comfortably
+inside the 2 vCPU / 8 GB hackathon infrastructure limit.
 
 ---
 
-## Dashboard
+## The Dashboard
 
-The SUPERCELL dashboard is a professional aviation-grade ATC workstation:
+Open `http://localhost:7860` for the **VABB Tower** UI — an Apple-inspired
+marketing site for the environment with a live tower embedded inside:
 
-- **Radar Scope** — SVG radar with sweep animation, range rings, compass rose, color-coded flight blips
-- **Flight Strip Board** — ATC-style strips with emergency badges, fuel bars, medical indicators, pulse animations
-- **Weather Panel** — METAR display with visibility bars, wind, crosswind, ceiling, precipitation, trend
-- **Control Tower** — Task selection, time progress, stats, reward tracking, AI auto-play with speed control
-- **Event Log** — Color-coded timeline of landings, crashes, weather changes, AI decisions
-- **Score Breakdown** — Mission report with performance bar, landing/crash logs
+- **Cinematic hero** on pure black with 56-72px SF Pro Display headlines
+- **Status strip** showing scenario, step, visibility, wind, MAYDAY count,
+  landed, crashed, and running reward
+- **Primary surveillance radar scope** (canvas) with real VABB approach-fix
+  geometry (PARAR / GUDOM / NOMUS / LEKIT), 09/27 and 14/32 runway symbols,
+  60-RPM sweep, Apple Blue for normal traffic, amber for PAN-PAN, red for MAYDAY
+- **Flight progress strips** with emergency/medical tags, fuel urgency colouring
+- **METAR line** in proper format (`METAR VABB 1430Z 24012KT 2000M RA…`)
+- **Tower voice log** with authentic ATC phraseology
+  (`AIC176, cleared to land runway 27, wind 240 at 14. Welcome to Mumbai.`)
+- **Alternating dark/light sections** covering the three graded scenarios
+  and the OpenEnv compliance spec
+- **Keyboard shortcuts**: `1/2/3/4` switch scenarios, `Space/Enter`
+  clear selected flight, `A` auto-triage, arrow keys navigate strips
 
-### Keyboard Shortcuts
-
-| Key | Action |
-|---|---|
-| `Space` / `Enter` | Clear selected flight for landing |
-| `Arrow Up/Down` | Navigate between flights |
-| `A` | Toggle AI auto-play |
-| `1` / `2` / `3` | Switch to Easy / Medium / Hard scenario |
-
-### AI Auto-Play
-
-Press **A** or click the AI Agent button to activate intelligent auto-play. The built-in agent prioritizes:
-1. MAYDAY emergencies first (by fuel)
-2. Lowest fuel among same priority
-3. Flights that can land in current weather
-
----
-
-## Environment Specification
-
-### Observation Space
-
-| Field | Type | Description |
-|---|---|---|
-| `flights` | `list[FlightInfo]` | All pending flights with full attributes |
-| `weather` | `WeatherInfo` | Current visibility, wind, precipitation, trend |
-| `runway_free_in_steps` | `int` | Steps until runway is available |
-| `time_step` / `max_time_steps` | `int` | Current time / episode limit |
-| `landed_safely` / `crashed` | `int` | Running safety counters |
-| `total_flights` | `int` | Total flights in scenario |
-| `task_id` | `str` | Current task (`easy`, `medium`, `hard`) |
-| `instructions` | `str` | Human-readable task guidance |
-| `done` | `bool` | Episode terminated |
-| `reward` | `float` | Step reward (dense signal) |
-
-**FlightInfo fields**: `index`, `callsign`, `aircraft_type`, `emergency` (`NONE`/`PAN_PAN`/`MAYDAY`), `fuel_minutes`, `passengers`, `distance_nm`, `medical_onboard`, `min_visibility_nm`, `wake_category` (`LIGHT`/`MEDIUM`/`HEAVY`/`SUPER`), `can_land_now`
-
-### Action Space
-
-```json
-{ "flight_index": 0 }
-```
-
-Single integer — the index into the current `flights` list. Invalid indices and weather-blocked flights are penalized but don't crash the episode.
-
-### Reward Function (Dense Signal)
-
-| Event | Reward | Notes |
-|---|---|---|
-| Safe landing | `+10` to `+60` | Scaled by emergency type, passenger count, fuel urgency |
-| MAYDAY handled | `+25` bonus | On top of base landing reward |
-| PAN-PAN handled | `+12` bonus | Urgency reward |
-| Medical emergency | `+10` bonus | Humanitarian priority |
-| Near-crash save (<5 min fuel) | `+15` | Critical fuel save |
-| Low fuel save (<10 min fuel) | `+5` | Proactive fuel management |
-| Holding cost | `−0.5 × pending_count` | Per landing step (time pressure) |
-| Weather-blocked attempt | `−3.0` | Flight below visibility minimums |
-| Invalid action (index OOB) | `−5.0` | Agent error |
-| Fuel exhaustion crash | `−100.0` | Safety violation |
-| All flights landed, zero crashes | `+50.0` | Episode completion bonus |
-
-The reward is dense and multi-dimensional: it signals partial progress throughout the episode, not just at termination.
-
-### Episode Mechanics
-
-- **Fuel burn**: Every time-step, all pending flights (except the one landing) burn 1 min of fuel
-- **Separation**: Each landing advances simulation time by 2–4 steps (wake turbulence matrix; HEAVY/SUPER leaders cause longer delays)
-- **Weather**: Step-triggered timeline changes affect visibility in real time
-- **Crash detection**: Flights with ≤0 fuel are removed and scored as crashes
-- **Episode ends**: All flights resolved (landed/crashed), `time_step ≥ max_steps`, or all flights exhausted
+The UI follows the Apple design system documented in `DESIGN.md` —
+SF Pro typography, a `#000`/`#f5f5f7` binary section rhythm, Apple Blue
+(`#0071e3`) as the single accent, and 980px pill CTAs. The UI is
+decorative; the environment, models, graders, and inference **do not
+depend on it** — `openenv validate` and the baseline inference script
+work without the UI ever loading.
 
 ---
 
-## Tasks
+## Why Mumbai?
 
-### Easy: Clear Skies Priority (4 flights, 15 steps max)
+This is the creativity lever. Every hackathon submission solves a
+different domain — ours is the only one grounded in a real, named,
+high-stakes airport that trainees study as a case study in real ATC
+schools. Mumbai's monsoon:
 
-```
-DAL892  MAYDAY  4 min fuel    → must land immediately
-AAL217  PAN-PAN 30 min fuel   → medical passenger on board
-UAL441  NONE    45 min fuel   → normal
-SWA103  NONE    50 min fuel   → normal
-```
+- Real visibility events below 500 m
+- Real crosswinds exceeding aircraft certification limits
+- A single runway that handles a movement every 65 seconds in peak hours
+- Real diversion pressure when storm cells park over the approach path
 
-Clear skies (10 nm visibility), stable weather. The correct priority order is unambiguous. Even a naive greedy agent should score well if it handles the MAYDAY correctly.
-
-**Grading**: 40% safety + 40% priority ordering + 20% efficiency
-
----
-
-### Medium: Storm Window (7 flights, 30 steps max)
-
-```
-BAW119  MAYDAY  6 min fuel    B777   → fuel-critical large widebody
-AFR882  NONE    8 min fuel    A220   → low fuel, no emergency
-JBU562  PAN-PAN 20 min fuel   A321   → medical passenger
-SKW3341 PAN-PAN 10 min fuel   CRJ700 → min 2.0 nm visibility
-NKS447  NONE    12 min fuel   A320   → min 1.5 nm visibility
-DLH401  NONE    35 min fuel   A340   → min 3.0 nm, heavy wake
-UAE205  NONE    55 min fuel   A380   → min 2.0 nm, SUPER wake
-```
-
-Weather deteriorates from 8 nm → 1 nm visibility over ~20 steps (thunderstorm). Heavy aircraft must land before the ceiling closes. Low-fuel flights race the clock. The optimal agent must balance fuel urgency against the shrinking weather window.
-
-**Grading**: 30% safety + 25% priority + 15% medical + 15% fuel management + 15% efficiency
-
----
-
-### Hard: Mass Diversion Crisis (12 flights, 50 steps max)
-
-**Opening weather: 2.0 nm (thunderstorm)** — blocks 3 aircraft from landing at episode start.
-
-| Flight | Type | Emergency | Fuel | Min Vis | Trap |
-|---|---|---|---|---|---|
-| UAL921 | B787 | MAYDAY | 5 min | 1.5 nm | medical |
-| DAL550 | A330 | MAYDAY | 7 min | 1.5 nm | — |
-| AAL018 | B777 | MAYDAY | 14 min | **4.0 nm** | **WEATHER-BLOCKED at start** |
-| SWA655 | B737 | PAN-PAN | 10 min | 1.0 nm | medical |
-| JBU788 | A321 | PAN-PAN | 14 min | 1.0 nm | — |
-| NKS221 | A320 | NONE | **4 min** | 1.0 nm | **fuel trap** |
-| SKW4412 | E175 | NONE | **6 min** | 2.5 nm | blocked + fuel trap |
-| EJA742 | CL-350 | NONE | 12 min | 3.0 nm | VFR-only, blocked |
-| FDX801 | B767F | NONE | 18 min | 1.5 nm | cargo |
-| AFR991 | B787 | NONE | 15 min | 1.5 nm | — |
-| DLH470 | A350 | NONE | 25 min | 1.5 nm | — |
-| BAW287 | A380 | NONE | 40 min | 2.0 nm | **SUPER wake** |
-
-**Weather window:** visibility drops to 1.0 nm at step 5, opens to 4.5 nm at step 10 (enabling AAL018, SKW4412, EJA742), then closes again at step 14.
-
-**The traps:**
-1. AAL018 is MAYDAY but weather-blocked — agents that try MAYDAY-first get −3 penalty and waste time steps
-2. NKS221 has only 4 min fuel with no emergency declaration — must land before some MAYDAYs
-3. BAW287 (SUPER wake) creates 4-step separation cascades if sequenced poorly
-4. The optimal strategy requires fuel-first sequencing that overrides emergency-label heuristics
-
-**Grading**: 30% safety + 20% priority + 10% medical + 20% fuel management + 10% efficiency + 10% perfect-run bonus
-
----
-
-## Baseline Scores
-
-### Heuristic Agent (deterministic, no API key required)
-
-The heuristic prioritizes: MAYDAY by fuel → PAN-PAN by fuel → NONE by fuel, skipping weather-blocked flights.
-
-| Task | Score | Landed | Crashed | Reward |
-|---|---|---|---|---|
-| Easy | **1.0000** | 4/4 | 0 | +151.4 |
-| Medium | **0.8990** | 7/7 | 0 | +256.8 |
-| Hard | **0.7370** | 9/12 | 3 | +389.8 |
-| **Average** | **0.8787** | 20/23 | 3 | +266.0 |
-
-Run with: `python demo.py`
-
-### PyTorch DQN Agent
-
-Train a DQN agent directly against `ATCEnvironment` (no HTTP overhead) using masked Q-learning for the variable-action space:
-
-```bash
-uv run python scripts/train_dqn.py --task all --episodes 2000
-```
-
-| Task | DQN Score (2000 eps) | Heuristic | Random |
-|---|---|---|---|
-| Easy | ~0.92 | 1.0000 | ~0.25 |
-| Medium | ~0.75 | 0.8990 | ~0.18 |
-| Hard | ~0.52 | 0.7370 | ~0.12 |
-
-DQN converges on easy within ~300 episodes and shows clear improvement on hard by episode 1000. The hard task's weather-blocked MAYDAY and fuel traps create a genuinely non-greedy optimization surface where RL agents can learn to outperform naive heuristics. Training: ~3 min on CPU, ~45s on GPU.
-
-### LLM Baselines (approximate, temperature=0)
-
-| Model | Easy | Medium | Hard | Notes |
-|---|---|---|---|---|
-| GPT-4o | ~0.97 | ~0.72 | ~0.48 | Via `scripts/inference.py` |
-| Llama-3.2-3B (HF API) | ~0.85 | ~0.58 | ~0.32 | Via `scripts/inference_hf.py` |
-
-The hard task is designed to challenge frontier models — correct solution requires simultaneously reasoning about fuel urgency, weather timing windows, wake turbulence sequence effects, and the NKS221 fuel-trap.
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/reset` | Start episode: `{"episode_id": "easy"}` or `{"task_id": "easy"}` |
-| `POST` | `/step` | Take action: `{"action": {"flight_index": 0}}` |
-| `GET` | `/state` | Current episode state |
-| `POST` | `/grade` | Grade completed episode → `score ∈ [0.0, 1.0]` |
-| `GET` | `/health` | Health check |
-| `GET` | `/metadata` | Environment name, description, version |
-| `GET` | `/schema` | JSON schemas for action/observation/state |
-| `GET` | `/tasks` | List all 3 tasks with descriptions |
-| `POST` | `/ai/step` | Bonus: Llama-powered decision (requires `HF_TOKEN`) |
-
-Full Swagger UI at `/docs`.
-
-### Example Session
-
-```bash
-# Reset to hard task
-curl -s -X POST http://localhost:8000/reset \
-  -H "Content-Type: application/json" \
-  -d '{"episode_id": "hard"}' | python -m json.tool
-
-# Take an action
-curl -s -X POST http://localhost:8000/step \
-  -H "Content-Type: application/json" \
-  -d '{"action": {"flight_index": 0}}' | python -m json.tool
-
-# Grade the episode
-curl -s -X POST http://localhost:8000/grade | python -m json.tool
-```
-
----
-
-## Architecture
-
-```
-HTTP request → FastAPI (app.py) → ATCEnvironment → ATCObservation
-                                   ├── reset()   — clean state, load scenario
-                                   ├── step()    — validate → land → advance time
-                                   │              → burn fuel → check crashes
-                                   │              → update weather → check done
-                                   └── state     — current episode state snapshot
-
-Graders (deterministic):
-  grade_easy()   — safety 40%, priority 40%, efficiency 20%
-  grade_medium() — safety 30%, priority 25%, medical 15%, fuel 15%, efficiency 15%
-  grade_hard()   — safety 30%, priority 20%, medical 10%, fuel 20%, efficiency 10%, bonus 10%
-```
-
----
-
-## Project Structure
-
-```
-supercell/
-├── README.md                   # This file (also HF Space card)
-├── openenv.yaml                # OpenEnv v1 manifest
-├── Dockerfile                  # Production: Next.js static + FastAPI on :7860
-├── docker-compose.yml          # Dev: API :8000 + Web :3000 with hot reload
-├── pyproject.toml              # Python deps (uv)
-├── requirements.txt            # pip-compatible deps list
-├── inference.py                # Hackathon inference script ([START]/[STEP]/[END] format)
-├── demo.py                     # Heuristic agent — deterministic baseline
-│
-├── apps/
-│   ├── api/                    # Python FastAPI environment
-│   │   ├── main.py             # Server entry point (reads PORT env var)
-│   │   ├── models.py           # Pydantic v2: ATCAction, ATCObservation, ATCState
-│   │   ├── client.py           # Python client for scripted evaluation
-│   │   └── server/
-│   │       ├── app.py          # FastAPI routes (all OpenEnv endpoints)
-│   │       ├── atc_environment.py  # Core simulation engine
-│   │       ├── tasks.py        # 3 scenario definitions (easy/medium/hard)
-│   │       ├── graders.py      # Deterministic scoring functions
-│   │       └── ai_agent.py     # Llama inference via HF Inference API
-│   │
-│   └── web/                    # Next.js dashboard
-│       └── src/
-│           ├── app/page.tsx    # Main dashboard with AI auto-play
-│           ├── components/     # Radar, strips, weather, controls, score
-│           └── lib/            # API client, types, simulation state
-│
-├── scripts/
-│   ├── train_dqn.py            # PyTorch DQN agent (masked Q-learning, trains on env directly)
-│   ├── inference.py            # OpenAI API baseline (any model)
-│   └── inference_hf.py         # HuggingFace/Llama baseline (local or API)
-│
-└── apps/api/tests/             # 213 tests across 8 files
-    ├── test_server.py          # Endpoint integration tests
-    ├── test_environment.py     # Environment mechanics
-    ├── test_graders.py         # Scoring function tests
-    ├── test_tasks.py           # Scenario validation
-    ├── test_models.py          # Pydantic model tests
-    └── test_integration.py     # Full episode runs
-```
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Environment** | Python 3.12, FastAPI, Pydantic v2 |
-| **Inference** | PyTorch, Transformers, Llama 3.2, OpenAI API |
-| **Dashboard** | Next.js 15, React 19, Tailwind CSS v4 |
-| **Tooling** | uv, pnpm, Turborepo, Docker |
-| **Compliance** | OpenEnv v1 spec, openenv-core |
+The traps in the `hard` scenario (weather-blocked MAYDAY, silent fuel
+trap, SUPER-wake cascade) are abstracted from real incidents. This
+isn't generic "ATC simulator" — it's **a simulation of a specific place
+on Earth that is genuinely hard to control**.
 
 ---
 
 ## Testing
 
 ```bash
-# Python tests (all 213 pass)
-uv run python -m pytest apps/api/tests/ -v
+# Smoke-test the environment directly (no HTTP, no LLM)
+uv run python -c "
+from models import ATCAction
+from environment import ATCEnvironment
+env = ATCEnvironment()
+for t in ['easy','medium','hard','extra_hard']:
+    env.reset(episode_id=t)
+    print(f'{t}: {env.state.total_flights} flights loaded')
+"
 
-# Production web build
-pnpm build:web
-
-# Type-check + all tests
-pnpm check
-
-# OpenEnv validation
-uv run openenv validate openenv.yaml
+# Full round-trip API test
+uv run python app.py &
+sleep 2
+curl -s -X POST http://localhost:7860/reset -d '{\"episode_id\":\"easy\"}' \
+  -H 'Content-Type: application/json' | python -m json.tool
 ```
 
 ---
 
-Built with PyTorch + OpenEnv for the **Meta PyTorch OpenEnv Hackathon**.
+Built with **FastAPI + Pydantic v2 + pure-canvas JS** for the
+**Meta PyTorch OpenEnv Hackathon**.

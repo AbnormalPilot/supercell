@@ -1,66 +1,79 @@
-"""SUPERCELL — CSIA Mumbai ATC with Custom UI.
+"""SUPERCELL — VABB Mumbai ATC Emergency Triage (OpenEnv-compliant).
 
-FastAPI backend with custom Mumbai Airport themed HTML/JS frontend.
-No Gradio — pure custom radar simulation.
+Uses `openenv.core.env_server.http_server.create_app()` to wire the
+canonical `/reset`, `/step`, `/state`, `/schema`, `/health`, `/metadata`,
+`/mcp`, and `/ws` endpoints with the correct contract. Custom routes
+(the Monsoon Mumbai tower UI, `/tasks`, and `/grade`) are layered on
+top of the canonical app.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Optional, List, Dict, Any
-from dataclasses import asdict
+from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from openenv.core.env_server.http_server import create_app as create_openenv_app
 from pydantic import BaseModel
 
-from models import ATCAction, ATCObservation, EmergencyLevel
 from environment import ATCEnvironment
-from tasks import list_tasks, TASKS
-from graders import GRADERS
+from models import ATCAction, ATCObservation
+from tasks import TASKS, list_tasks
 
 # =============================================================================
-# Global State
+# Singleton environment
+#
+# OpenEnv's create_app expects a factory callable. In simulation mode with
+# max_concurrent_envs=1, we return the same singleton so episode state is
+# preserved across /reset and /step calls from the same HTTP client.
 # =============================================================================
 
-env = ATCEnvironment()
-_initialized = False
+_ENV_SINGLETON = ATCEnvironment()
+
+
+def _env_factory() -> ATCEnvironment:
+    return _ENV_SINGLETON
+
 
 # =============================================================================
-# Pydantic Models for API
+# Custom response models (only for the /grade endpoint)
 # =============================================================================
 
-class ResetRequest(BaseModel):
-    seed: Optional[int] = None
-    episode_id: Optional[str] = None
-    task_id: Optional[str] = None
-
-class StepRequest(BaseModel):
-    action: Dict[str, Any]
 
 class GradeResponse(BaseModel):
     task_id: str
     score: float
-    landing_log: List[Dict]
-    crash_log: List[Dict]
+    landing_log: list[dict[str, Any]]
+    crash_log: list[dict[str, Any]]
     steps_used: int
     episode_reward: float
 
+
 # =============================================================================
-# FastAPI App
+# App factory
 # =============================================================================
 
+
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
 def create_app() -> FastAPI:
-    """Create FastAPI app with custom Mumbai Airport UI."""
-    
-    app = FastAPI(
-        title="SUPERCELL - CSIA Mumbai ATC",
-        description="Mumbai Airport ATC Emergency Triage Simulation",
-        version="1.0.0"
+    """Build the FastAPI app: OpenEnv canonical routes + custom tower UI."""
+
+    # Canonical OpenEnv app — provides /reset, /step, /state, /schema,
+    # /health, /metadata, /mcp, /ws, /openapi.json, /docs, /redoc.
+    app: FastAPI = create_openenv_app(
+        _env_factory,
+        ATCAction,
+        ATCObservation,
+        env_name="supercell",
+        max_concurrent_envs=1,
     )
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -68,102 +81,70 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
-    # Serve static files (CSS, JS)
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-    
-    # Serve custom UI at root
-    @app.get("/", response_class=HTMLResponse)
-    async def root():
-        return FileResponse("static/index.html")
-    
-    # Health check
-    @app.get("/health")
-    async def health():
-        return {"status": "healthy", "airport": "CSIA Mumbai", "icao": "VABB"}
-    
-    # List tasks
-    @app.get("/tasks")
-    async def tasks():
-        return {"tasks": list_tasks(), "count": len(TASKS)}
-    
-    # List graders
-    @app.get("/graders")
-    async def graders():
-        return {
-            "graders": [
-                {
-                    "task_id": task_id,
-                    "id": task_id,
-                    "type": "deterministic",
-                    "endpoint": "/grade",
-                    "scoring_range": [0.0, 1.0],
-                }
-                for task_id in GRADERS.keys()
-            ],
-            "count": len(GRADERS),
-        }
-    
-    # Reset
-    @app.post("/reset")
-    async def reset(req: Optional[ResetRequest] = None):
-        global _initialized
-        task_id = req.task_id if req else (req.episode_id if req else "easy")
-        obs = env.reset(episode_id=task_id)
-        _initialized = True
-        return {
-            "observation": asdict(obs),
-            "reward": obs.reward,
-            "done": obs.done,
-        }
-    
-    # Step
-    @app.post("/step")
-    async def step(req: StepRequest):
-        global _initialized
-        if not _initialized:
-            raise HTTPException(status_code=400, detail="Call /reset first")
-        
-        action = ATCAction(**req.action)
-        obs = env.step(action)
-        return {
-            "observation": asdict(obs),
-            "reward": obs.reward,
-            "done": obs.done,
-        }
-    
-    # State
-    @app.get("/state")
-    async def state():
-        global _initialized
-        if not _initialized:
-            raise HTTPException(status_code=400, detail="Call /reset first")
-        return asdict(env._get_observation())
-    
-    # Grade
-    @app.post("/grade", response_model=GradeResponse)
-    async def grade():
-        global _initialized
-        if not _initialized:
-            raise HTTPException(status_code=400, detail="Call /reset first")
-        
-        score = env.grade()
-        return GradeResponse(
-            task_id=env.state.task_id,
-            score=score,
-            landing_log=env.state.landing_log,
-            crash_log=env.state.crash_log,
-            steps_used=env.state.time_step,
-            episode_reward=env.state.episode_reward,
+
+    # -- Override /state: the canonical OpenEnv /state filters the response
+    # through the base `State` schema, which drops all of our custom fields.
+    # We remove it and re-register one that returns the full ATCState dump.
+    from starlette.routing import Route
+    app.router.routes = [
+        r for r in app.router.routes
+        if not (
+            isinstance(r, Route)
+            and getattr(r, "path", None) == "/state"
+            and "GET" in (getattr(r, "methods", None) or set())
         )
-    
+    ]
+
+    @app.get("/state", tags=["State Management"], include_in_schema=True)
+    async def full_state() -> dict[str, Any]:
+        return _ENV_SINGLETON.state.model_dump()
+
+    # -- Monsoon Mumbai tower UI --------------------------------------
+    if _STATIC_DIR.exists():
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(_STATIC_DIR)),
+            name="static",
+        )
+
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        async def root() -> FileResponse:
+            return FileResponse(str(_STATIC_DIR / "index.html"))
+
+    # -- Custom: /tasks listing ---------------------------------------
+    @app.get("/tasks", tags=["Environment Info"])
+    async def tasks() -> dict[str, Any]:
+        return {"tasks": list_tasks(), "count": len(TASKS)}
+
+    # -- Custom: /grade deterministic scoring -------------------------
+    @app.post("/grade", response_model=GradeResponse, tags=["Environment Info"])
+    async def grade() -> GradeResponse:
+        score = _ENV_SINGLETON.grade()
+        s = _ENV_SINGLETON.state
+        return GradeResponse(
+            task_id=s.task_id,
+            score=score,
+            landing_log=list(s.landing_log),
+            crash_log=list(s.crash_log),
+            steps_used=s.time_step,
+            episode_reward=s.episode_reward,
+        )
+
     return app
 
+
 # =============================================================================
-# Entry Point
+# Entry point — `python app.py` and `uv run python app.py`
 # =============================================================================
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Run the FastAPI server on the HF Space default port (7860)."""
     import uvicorn
-    port = int(os.getenv("PORT", 7860))
+
+    port = int(os.getenv("PORT", "7860"))
     uvicorn.run(create_app(), host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+    main()
