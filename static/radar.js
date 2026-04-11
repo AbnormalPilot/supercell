@@ -590,6 +590,20 @@
             const data = await api("/grade", {});
             const el = document.getElementById("score-display");
             if (el) el.textContent = data.score.toFixed(3);
+
+            const noOp =
+                data.landing_log.length === 0
+                && data.crash_log.length === 0
+                && (data.steps_used || 0) === 0;
+
+            if (noOp) {
+                logLine(
+                    "[SYSTEM] No steps played yet on this episode. " +
+                    "Press Clear to Land, Auto Triage, or Space/Enter to play.",
+                    "sys"
+                );
+            }
+
             logLine(
                 `[SCORE] ${data.task_id.toUpperCase()} · ${data.score.toFixed(3)} · ` +
                 `landed ${data.landing_log.length} · crashed ${data.crash_log.length} · ` +
