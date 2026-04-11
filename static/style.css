@@ -262,6 +262,30 @@ code, kbd {
     text-align: center;
 }
 
+/* Hackathon logo strip — Meta · PyTorch · HuggingFace · OpenEnv × Scaler */
+.sk-hackathon-logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 40px;
+    animation: sk-fade-in 0.8s ease-out;
+}
+
+.sk-hackathon-logo img {
+    max-width: min(100%, 440px);
+    height: auto;
+    opacity: 0.92;
+    transition: opacity 0.3s ease;
+}
+
+.sk-hackathon-logo img:hover {
+    opacity: 1;
+}
+
+@keyframes sk-fade-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 0.92; transform: translateY(0); }
+}
+
 .sk-cta-row {
     display: flex;
     justify-content: center;
