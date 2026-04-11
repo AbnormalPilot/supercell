@@ -71,6 +71,13 @@ code, kbd {
     color: #fff;
 }
 
+/* Spec cards are white cards inside the dark Spec section — code inside them
+   needs the light-section styling, NOT the dark inherited rule. */
+.sk-section-dark .sk-spec-card code {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--sk-near-black);
+}
+
 /* =========================================================================
    Navigation glass
    ========================================================================= */
