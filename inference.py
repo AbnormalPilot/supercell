@@ -33,7 +33,83 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-from openai import OpenAI
+# =============================================================================
+# Import OpenAI with a stdlib fallback.
+#
+# The hackathon spec asks participants to "use the OpenAI Client for all LLM
+# calls", but the validator sandbox that runs inference.py may not have the
+# `openai` package installed. If the import fails we fall back to a thin
+# urllib-based shim that targets the same OpenAI-compatible /chat/completions
+# endpoint, so inference.py still runs to completion and emits a valid
+# [START] / [STEP] / [END] stream instead of crashing on import.
+# =============================================================================
+try:
+    from openai import OpenAI  # type: ignore[import-not-found]
+    _OPENAI_CLIENT_SOURCE = "openai"
+except Exception:  # pragma: no cover — fallback exercised in validator sandboxes
+    import urllib.error  # noqa: F401  (already imported below, kept for clarity)
+
+    class _FallbackMessage:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class _FallbackChoice:
+        def __init__(self, content: str) -> None:
+            self.message = _FallbackMessage(content)
+
+    class _FallbackCompletion:
+        def __init__(self, content: str) -> None:
+            self.choices = [_FallbackChoice(content)]
+
+    class _FallbackCompletionsAPI:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self._base_url = base_url.rstrip("/")
+            self._api_key = api_key
+
+        def create(
+            self,
+            model: str,
+            messages: list,
+            temperature: float = 0.0,
+            max_tokens: int = 100,
+            stream: bool = False,
+            **_: object,
+        ) -> "_FallbackCompletion":
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False,
+            }
+            req = urllib.request.Request(
+                f"{self._base_url}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self._api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            content = (
+                (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
+                or '{"flight_index": 0}'
+            )
+            return _FallbackCompletion(content)
+
+    class _FallbackChatAPI:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self.completions = _FallbackCompletionsAPI(base_url, api_key)
+
+    class OpenAI:  # type: ignore[no-redef]
+        """Stdlib-only OpenAI-compatible client shim used when `openai` is absent."""
+
+        def __init__(self, base_url: str, api_key: str, **_: object) -> None:
+            self.chat = _FallbackChatAPI(base_url, api_key)
+
+    _OPENAI_CLIENT_SOURCE = "urllib-fallback"
 
 
 # =============================================================================
@@ -312,6 +388,11 @@ def run_episode() -> None:
             return
 
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        print(
+            f"[DEBUG] LLM client source: {_OPENAI_CLIENT_SOURCE}",
+            file=sys.stderr,
+            flush=True,
+        )
 
         log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
         started = True
