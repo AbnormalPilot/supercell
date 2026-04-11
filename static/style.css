@@ -41,6 +41,12 @@ html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Account for the 48px sticky glass nav when jumping via # links */
+    scroll-padding-top: 60px;
+}
+
+.sk-section {
+    scroll-margin-top: 60px;
 }
 
 body {
@@ -118,6 +124,26 @@ code, kbd {
 .sk-nav-links a:hover { opacity: 1; }
 
 .sk-nav-cta { margin-left: auto; }
+
+.sk-icon-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: var(--sk-white);
+    opacity: 0.88;
+    transition: opacity 0.2s, background 0.2s;
+}
+.sk-icon-link:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.12);
+}
+.sk-icon-link:focus-visible {
+    outline: 2px solid var(--sk-focus-color);
+    outline-offset: 2px;
+}
 
 /* =========================================================================
    Layout helpers
@@ -769,7 +795,7 @@ code, kbd {
 .sk-log-score { color: var(--sk-focus-color); font-weight: 600; }
 
 /* =========================================================================
-   Scenarios (dark cards)
+   Scenarios — clickable cards on light background
    ========================================================================= */
 
 .sk-scenario-grid {
@@ -779,16 +805,52 @@ code, kbd {
 }
 
 .sk-scenario-card {
-    background: #111113;
-    padding: 32px 28px;
+    /* reset button defaults */
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    border: none;
+    appearance: none;
+    -webkit-appearance: none;
+
+    display: flex;
+    flex-direction: column;
+    background: var(--sk-white);
+    padding: 32px 28px 26px;
     border-radius: 18px;
+    box-shadow: var(--sk-card-shadow);
+    cursor: pointer;
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow 0.25s ease,
+                background 0.25s ease;
+    min-height: 100%;
+}
+
+.sk-scenario-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 18px 50px rgba(0, 113, 227, 0.22);
+    background: var(--sk-white);
+}
+
+.sk-scenario-card:hover .sk-scenario-cta {
+    color: var(--sk-focus-color);
+    transform: translateX(4px);
+}
+
+.sk-scenario-card:focus-visible {
+    outline: 2px solid var(--sk-focus-color);
+    outline-offset: 4px;
+}
+
+.sk-scenario-card:active {
+    transform: translateY(-2px);
 }
 
 .sk-scenario-tag {
     font-family: var(--sk-font-text);
     font-size: 12px;
     font-weight: 600;
-    color: var(--sk-link-dark);
+    color: var(--sk-link);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-bottom: 12px;
@@ -800,7 +862,7 @@ code, kbd {
     font-weight: 600;
     line-height: 1.14;
     letter-spacing: 0.004em;
-    color: var(--sk-white);
+    color: var(--sk-near-black);
     margin-bottom: 14px;
 }
 
@@ -808,27 +870,47 @@ code, kbd {
     font-family: var(--sk-font-text);
     font-size: 15px;
     line-height: 1.47;
-    color: rgba(255, 255, 255, 0.72);
+    color: var(--sk-text-80);
     margin-bottom: 24px;
     letter-spacing: -0.012em;
+    flex: 1;
+}
+
+.sk-scenario-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .sk-scenario-stat {
     font-family: var(--sk-font-text);
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.48);
-    letter-spacing: 0.04em;
+    font-size: 11px;
+    color: var(--sk-text-48);
+    letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 .sk-scenario-stat span {
     font-family: var(--sk-font-display);
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 600;
-    color: var(--sk-white);
+    color: var(--sk-near-black);
     letter-spacing: 0;
     display: block;
-    margin-top: 4px;
+    margin-top: 2px;
     text-transform: none;
+}
+
+.sk-scenario-cta {
+    font-family: var(--sk-font-text);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sk-link);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    transition: color 0.2s, transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* =========================================================================

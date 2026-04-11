@@ -891,8 +891,23 @@
     }
 
     // ---------- Wiring ----------
+    // Scenario picker inside the tower (compact rows in the control column)
     document.querySelectorAll(".sk-scenario-row").forEach((b) =>
         b.addEventListener("click", () => resetTask(b.dataset.task))
+    );
+
+    // Large scenario cards in the Scenarios section — clicking one loads the
+    // task AND smoothly scrolls to the tower so the user sees it come alive.
+    document.querySelectorAll(".sk-scenario-card").forEach((card) =>
+        card.addEventListener("click", () => {
+            const task = card.dataset.task;
+            if (!task) return;
+            resetTask(task).catch(() => { /* already logged */ });
+            const scope = document.getElementById("scope");
+            if (scope) {
+                scope.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+        })
     );
     const clearBtn = document.getElementById("btn-clear-land");
     const autoBtn = document.getElementById("btn-auto");
