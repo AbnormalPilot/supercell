@@ -371,6 +371,39 @@
         renderStrips();
     }
 
+    /**
+     * Pick the best default selection: highest-priority landable flight,
+     * tie-broken by lowest fuel. Falls back to index 0 if nothing can land.
+     * Returns null if there are no flights.
+     */
+    function bestDefaultIndex() {
+        if (!observation || !observation.flights || !observation.flights.length) {
+            return null;
+        }
+        const priority = { MAYDAY: 0, PAN_PAN: 1, NONE: 2 };
+        const landable = observation.flights
+            .map((f, i) => ({ f, i }))
+            .filter(({ f }) => f.can_land_now);
+        const pool = landable.length ? landable : observation.flights.map((f, i) => ({ f, i }));
+        pool.sort((a, b) =>
+            (priority[a.f.emergency] - priority[b.f.emergency]) ||
+            (a.f.fuel_minutes - b.f.fuel_minutes)
+        );
+        return pool[0].i;
+    }
+
+    function autoSelectBest() {
+        const i = bestDefaultIndex();
+        if (i === null) {
+            selectedIndex = null;
+            const el = document.getElementById("selected-flight");
+            if (el) el.textContent = "—";
+            renderStrips();
+        } else {
+            selectFlight(i);
+        }
+    }
+
     // ---------- Event log ----------
     function logLine(text, cls) {
         const log = document.getElementById("event-log");
@@ -424,17 +457,22 @@
             });
             renderStrips();
             updateStatus();
+            autoSelectBest();
         } catch (e) {
             logLine(`[ERROR] ${e.message}`, "crash");
         }
     }
 
     async function clearToLand() {
-        if (selectedIndex === null) {
-            logLine("[TWR] Station calling, say callsign.", "tower");
-            return;
+        // If nothing is selected, pick the best default so the button "just works".
+        if (selectedIndex === null || !observation || !observation.flights[selectedIndex]) {
+            const i = bestDefaultIndex();
+            if (i === null) {
+                logLine("[TWR] No inbound traffic. Load a scenario first.", "sys");
+                return;
+            }
+            selectFlight(i);
         }
-        if (!observation || !observation.flights[selectedIndex]) return;
         const prev = observation.flights[selectedIndex];
         try {
             const data = await api("/step", { action: { flight_index: selectedIndex } });
@@ -469,11 +507,11 @@
             }
             prevCrashed = observation.crashed;
 
-            selectedIndex = null;
-            const el = document.getElementById("selected-flight");
-            if (el) el.textContent = "—";
             renderStrips();
             updateStatus();
+            // Auto-advance selection to the next highest-priority flight so
+            // the user can keep pressing Clear to Land without re-selecting.
+            autoSelectBest();
 
             if (observation.done) {
                 logLine("[SYSTEM] Episode terminated · request grade", "sys");
