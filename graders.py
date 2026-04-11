@@ -1,12 +1,22 @@
 """SUPERCELL — Deterministic graders for the VABB Mumbai ATC environment.
 
-Each grader returns a score in [0.0, 1.0]. Graders are pure functions of
-the episode's landing_log and crash_log, so the same episode always
-produces the same score (required by the hackathon spec).
+Each grader returns a score in the STRICT open interval (0.01, 0.99).
+
+Why not [0.0, 1.0]? The hackathon's Task Validation phase rejects
+scores of exactly 0.0 or 1.0 — such extremes are indistinguishable
+from a dummy "always 0" or "always 1" grader and indicate a
+non-functional grading signal. All outputs are clamped through
+`strict_score()` so perfect and catastrophic episodes still return
+meaningful-but-distinct values (0.99 vs 0.01) that the validator
+accepts as real grading output.
+
+Graders are pure functions of landing_log + crash_log, so identical
+episodes always return identical scores (required by the spec).
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any, Callable
 
 
@@ -14,8 +24,34 @@ from typing import Any, Callable
 # Helpers
 # =============================================================================
 
+# Strict open interval (0.0, 1.0) — never return exactly 0 or 1.
+MIN_STRICT_SCORE = 0.01
+MAX_STRICT_SCORE = 0.99
+
+
+def strict_score(value: float) -> float:
+    """Clamp a raw score into the strict open interval (0.01, 0.99).
+
+    The hackathon task validator considers exact 0.0 or 1.0 scores as
+    evidence of a non-working grader, so every public score is pushed
+    at least MIN_STRICT_SCORE away from 0 and MAX_STRICT_SCORE away
+    from 1.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return MIN_STRICT_SCORE
+    if math.isnan(v) or math.isinf(v):
+        return MIN_STRICT_SCORE
+    if v <= 0.0:
+        return MIN_STRICT_SCORE
+    if v >= 1.0:
+        return MAX_STRICT_SCORE
+    return max(MIN_STRICT_SCORE, min(MAX_STRICT_SCORE, v))
+
 
 def _clamp(x: float) -> float:
+    """Internal clamp to [0, 1] — used before the final strict clamp."""
     return max(0.0, min(1.0, x))
 
 
@@ -68,7 +104,7 @@ def grade_easy(
     crash_penalty = _ratio(len(crash_log), total) * 0.50
 
     score = 0.40 * safety + 0.40 * priority + 0.20 * efficiency - crash_penalty
-    return _clamp(score)
+    return strict_score(_clamp(score))
 
 
 def grade_medium(
@@ -118,7 +154,7 @@ def grade_medium(
         + 0.15 * efficiency
         - crash_penalty
     )
-    return _clamp(score)
+    return strict_score(_clamp(score))
 
 
 def grade_hard(
@@ -167,7 +203,7 @@ def grade_hard(
         + perfect_bonus
         - crash_penalty
     )
-    return _clamp(score)
+    return strict_score(_clamp(score))
 
 
 def grade_extra_hard(
@@ -214,7 +250,7 @@ def grade_extra_hard(
         + perfect_bonus
         - crash_penalty
     )
-    return _clamp(score)
+    return strict_score(_clamp(score))
 
 
 # =============================================================================
@@ -239,4 +275,4 @@ def grade_episode(
     task_id: str,
 ) -> float:
     grader = GRADERS.get(task_id, grade_easy)
-    return grader(landing_log, crash_log, total, steps, max_steps)
+    return strict_score(grader(landing_log, crash_log, total, steps, max_steps))

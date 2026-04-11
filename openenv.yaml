@@ -3,85 +3,162 @@ name: supercell
 type: space
 runtime: fastapi
 app: server.app:app
-entrypoint: server.app:main
 port: 7860
 version: "1.0.0"
-description: >-
-  SUPERCELL — Monsoon Mumbai ATC Emergency Triage. OpenEnv-compliant
-  environment set at VABB (Chhatrapati Shivaji Intl, Mumbai) during
-  monsoon operations. Agents play the Tower Controller, sequencing
-  landings under fuel, weather, wake-turbulence, and emergency constraints.
-action: ATCAction
-observation: ATCObservation
+description: >
+  SUPERCELL — Monsoon Mumbai ATC Emergency Triage. An OpenEnv-compliant
+  environment set at VABB (Chhatrapati Shivaji Intl, Mumbai) where the
+  agent plays Tower Controller during monsoon operations, sequencing
+  landings on a single active runway under fuel, weather, wake-turbulence,
+  and emergency constraints. Four graded tasks span winter haze through
+  a full monsoon surge, each with a deterministic [0.01, 0.99] grader
+  and dense partial-progress reward shaping.
+author: SUPERCELL Team
+tags:
+  - openenv
+  - reinforcement-learning
+  - agent-evaluation
+  - atc
+  - aviation
+  - mumbai
 
-graders:
-  - id: easy
-    type: deterministic
-    endpoint: /grade
-    scoring_range: [0.0, 1.0]
-  - id: medium
-    type: deterministic
-    endpoint: /grade
-    scoring_range: [0.0, 1.0]
-  - id: hard
-    type: deterministic
-    endpoint: /grade
-    scoring_range: [0.0, 1.0]
-  - id: extra_hard
-    type: deterministic
-    endpoint: /grade
-    scoring_range: [0.0, 1.0]
+entrypoint:
+  command: uv run python app.py
+
+interface:
+  base_url: http://localhost:7860
+  endpoints:
+    reset: /reset
+    step: /step
+    state: /state
+    health: /health
+    metadata: /metadata
+    schema: /schema
+    grader: /grader
+    tasks: /tasks
+    mcp: /mcp
+
+observation_space:
+  type: object
+  properties:
+    flights:
+      type: array
+      description: "Inbound aircraft on approach to VABB"
+      items:
+        type: object
+        properties:
+          index:
+            type: integer
+          callsign:
+            type: string
+          aircraft_type:
+            type: string
+          emergency:
+            type: string
+            enum: [NONE, PAN_PAN, MAYDAY]
+          fuel_minutes:
+            type: number
+          passengers:
+            type: integer
+          distance_nm:
+            type: number
+          medical_onboard:
+            type: boolean
+          min_visibility_nm:
+            type: number
+          wake_category:
+            type: string
+            enum: [LIGHT, MEDIUM, HEAVY, SUPER]
+          can_land_now:
+            type: boolean
+          bearing_deg:
+            type: number
+          approach_fix:
+            type: string
+    weather:
+      type: object
+      properties:
+        visibility_nm:
+          type: number
+        wind_knots:
+          type: number
+        crosswind_knots:
+          type: number
+        ceiling_feet:
+          type: number
+        precipitation:
+          type: string
+        trend:
+          type: string
+    runway_free_in_steps:
+      type: integer
+    time_step:
+      type: integer
+    max_time_steps:
+      type: integer
+    landed_safely:
+      type: integer
+    crashed:
+      type: integer
+    total_flights:
+      type: integer
+    task_id:
+      type: string
+    task_name:
+      type: string
+    done:
+      type: boolean
+    reward:
+      type: number
+    episode_reward:
+      type: number
+
+action_space:
+  type: object
+  properties:
+    flight_index:
+      type: integer
+      minimum: 0
+      description: "0-based index into observation.flights — the inbound to clear for landing"
 
 tasks:
   - id: easy
-    name: "Winter Haze"
-    description: >-
-      Calm November dawn at VABB. Four inbounds under clear skies — one
-      MAYDAY fuel emergency (AIC852) and one medical PAN-PAN (IGO6E227).
-      Priority call is unambiguous; solvable by a naive priority-first policy.
-    grader:
-      id: easy
-      type: deterministic
-      endpoint: /grade
-      scoring_range: [0.0, 1.0]
+    name: Winter Haze
+    difficulty: easy
+    description: >
+      Calm November dawn at VABB. Four inbounds under clear skies —
+      one MAYDAY fuel emergency (AIC852) and one medical PAN-PAN
+      (IGO6E227). Priority call is unambiguous; solvable by a naive
+      priority-first policy.
+    reward_range: [0.01, 0.99]
 
   - id: medium
-    name: "Pre-Monsoon Squall"
-    description: >-
+    name: Pre-Monsoon Squall
+    difficulty: medium
+    description: >
       May afternoon, Arabian Sea squall line rolling in. Seven inbounds.
-      Visibility deteriorates from 8 nm to 1 nm over ~14 steps, then eases.
-      BAW139 (3 nm minima) and UAE504 (SUPER wake) must land in the open
-      window while AIC132 MAYDAY and low-fuel AXB471 race the clock.
-    grader:
-      id: medium
-      type: deterministic
-      endpoint: /grade
-      scoring_range: [0.0, 1.0]
+      Visibility deteriorates from 8 nm to 1 nm over ~14 steps, then
+      eases. Heavy aircraft must land in the open window while AIC132
+      MAYDAY and low-fuel AXB471 race the clock.
+    reward_range: [0.01, 0.99]
 
   - id: hard
-    name: "Mumbai Monsoon Surge"
-    description: >-
+    name: Mumbai Monsoon Surge
+    difficulty: hard
+    description: >
       July peak monsoon at VABB. Twelve diverted aircraft, three MAYDAYs,
-      two PAN-PANs. Traps: IGO6E2043 is a weather-blocked MAYDAY, IGO6E5393
-      is a silent fuel trap (NONE status, 4 min fuel), and UAE504 is a
+      two PAN-PANs. Traps include a weather-blocked MAYDAY (IGO6E2043),
+      a silent fuel trap (IGO6E5393 — NONE status, 4 min fuel), and a
       SUPER-wake A380 that creates cascading separation penalties if
-      mis-sequenced. Optimal play requires fuel-first sequencing that
-      overrides emergency-label heuristics. Frontier models consistently fail.
-    grader:
-      id: hard
-      type: deterministic
-      endpoint: /grade
-      scoring_range: [0.0, 1.0]
+      mis-sequenced. Frontier models consistently fail this one.
+    reward_range: [0.01, 0.99]
 
   - id: extra_hard
-    name: "Total System Chaos"
-    description: >-
-      Hidden bonus. Twenty aircraft, five MAYDAYs with critical fuel, four
-      medical PAN-PANs, VFR-only business jets, a SUPER-wake A380, and a
-      weather timeline that oscillates from 0.5 nm to 6 nm four times over
-      80 steps. Not required for spec compliance.
-    grader:
-      id: extra_hard
-      type: deterministic
-      endpoint: /grade
-      scoring_range: [0.0, 1.0]
+    name: Total System Chaos
+    difficulty: hard
+    description: >
+      Hidden bonus scenario. Twenty aircraft, five MAYDAYs with critical
+      fuel, four medical PAN-PANs, VFR-only business jets, and a weather
+      timeline that oscillates between 0.5 nm and 6 nm four times over
+      80 steps.
+    reward_range: [0.01, 0.99]
