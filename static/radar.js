@@ -429,6 +429,9 @@
     }
 
     async function resetTask(id) {
+        // If auto-play is running, stop it first so we don't step on the new episode.
+        autoPlaying = false;
+        setAutoButton("Auto Triage");
         taskId = id;
         selectedIndex = null;
         trails.clear();
@@ -521,23 +524,64 @@
         }
     }
 
+    // ---------- Auto triage (play-to-done) ----------
+    // autoPlaying is a toggle: first click starts the loop, second click stops it.
+    // The loop plays one step, waits AUTO_STEP_DELAY_MS so the user can read the
+    // tower voice log line, then plays the next step, until the episode finishes.
+    const AUTO_STEP_DELAY_MS = 650;
+    let autoPlaying = false;
+
+    function setAutoButton(label) {
+        const el = document.getElementById("btn-auto");
+        if (el) el.textContent = label;
+    }
+
+    function sleep(ms) {
+        return new Promise((res) => setTimeout(res, ms));
+    }
+
     async function autoTriage() {
-        if (!observation || observation.done) return;
-        const landable = observation.flights
-            .map((f, i) => ({ f, i }))
-            .filter(({ f }) => f.can_land_now);
-        if (!landable.length) {
-            selectFlight(0);
-            await clearToLand();
+        // Second click → stop the running loop.
+        if (autoPlaying) {
+            autoPlaying = false;
             return;
         }
-        const priority = { MAYDAY: 0, PAN_PAN: 1, NONE: 2 };
-        landable.sort((a, b) =>
-            (priority[a.f.emergency] - priority[b.f.emergency]) ||
-            (a.f.fuel_minutes - b.f.fuel_minutes)
-        );
-        selectFlight(landable[0].i);
-        await clearToLand();
+
+        if (!observation || observation.done) {
+            logLine("[SYSTEM] Episode already finished. Load a scenario to continue.", "sys");
+            return;
+        }
+
+        autoPlaying = true;
+        setAutoButton("Stop Auto");
+        logLine("[SYSTEM] Auto triage engaged — heuristic agent flying the tower.", "sys");
+
+        try {
+            while (
+                autoPlaying
+                && observation
+                && !observation.done
+                && observation.flights.length > 0
+            ) {
+                const i = bestDefaultIndex();
+                if (i === null) break;
+                selectFlight(i);
+                await clearToLand();
+                // Pause between steps so the log is readable.
+                if (!observation.done) {
+                    await sleep(AUTO_STEP_DELAY_MS);
+                }
+            }
+        } finally {
+            autoPlaying = false;
+            setAutoButton("Auto Triage");
+        }
+
+        // Auto-grade at the end so the final score is shown without extra clicks.
+        if (observation && observation.done) {
+            logLine("[SYSTEM] Episode complete — computing final score.", "sys");
+            await gradeEpisode();
+        }
     }
 
     async function gradeEpisode() {
