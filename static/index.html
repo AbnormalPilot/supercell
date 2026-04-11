@@ -110,6 +110,21 @@
                 </div>
             </div>
 
+            <!-- Reward signal graph -->
+            <div class="sk-card sk-reward-card">
+                <div class="sk-card-header">
+                    <h3 class="sk-card-title">Reward Signal</h3>
+                    <span class="sk-card-caption">
+                        <span class="sk-legend-swatch sk-legend-pos"></span>Per-step reward
+                        <span class="sk-legend-swatch sk-legend-neg"></span>Penalty
+                        <span class="sk-legend-swatch sk-legend-cum"></span>Cumulative
+                    </span>
+                </div>
+                <div class="sk-reward-frame">
+                    <svg id="reward-graph" class="sk-reward-graph" preserveAspectRatio="none"></svg>
+                </div>
+            </div>
+
             <!-- Main two-column: radar + control -->
             <div class="sk-tower-grid">
                 <!-- Radar card -->

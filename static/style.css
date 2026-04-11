@@ -362,6 +362,45 @@ code, kbd {
 .sk-stat-danger { color: var(--sk-red); }
 
 /* =========================================================================
+   Reward signal card
+   ========================================================================= */
+
+.sk-reward-card {
+    margin-bottom: 24px;
+}
+
+.sk-reward-frame {
+    padding: 8px 22px 22px;
+    height: 160px;
+}
+
+.sk-reward-graph {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+}
+
+.sk-reward-graph text {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 10px;
+    fill: var(--sk-text-48);
+}
+
+.sk-legend-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin: 0 6px 0 14px;
+    vertical-align: middle;
+}
+.sk-legend-swatch:first-child { margin-left: 0; }
+.sk-legend-pos { background: #0071e3; }
+.sk-legend-neg { background: #e30000; }
+.sk-legend-cum { background: #1d1d1f; }
+
+/* =========================================================================
    Main tower two-column grid
    ========================================================================= */
 

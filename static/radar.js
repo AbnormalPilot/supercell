@@ -53,6 +53,8 @@
     let selectedIndex = null;
     let prevCrashed = 0;
     const trails = new Map();
+    /** @type {{step:number, reward:number, cumulative:number}[]} */
+    const rewardHistory = [];
 
     function polarToXY(bearingDeg, nm) {
         const rad = ((bearingDeg - 90) * Math.PI) / 180;
@@ -338,6 +340,117 @@
         });
     }
 
+    // ---------- Reward signal graph ----------
+    function recordReward(step, reward) {
+        const prev = rewardHistory.length
+            ? rewardHistory[rewardHistory.length - 1].cumulative
+            : 0;
+        rewardHistory.push({ step, reward, cumulative: prev + reward });
+        renderRewardGraph();
+    }
+
+    function clearRewardGraph() {
+        rewardHistory.length = 0;
+        renderRewardGraph();
+    }
+
+    function renderRewardGraph() {
+        const svg = document.getElementById("reward-graph");
+        if (!svg) return;
+
+        const W = svg.clientWidth || 600;
+        const H = svg.clientHeight || 160;
+        const pad = { top: 14, right: 14, bottom: 22, left: 44 };
+        const plotW = Math.max(1, W - pad.left - pad.right);
+        const plotH = Math.max(1, H - pad.top - pad.bottom);
+
+        if (rewardHistory.length === 0) {
+            svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+            svg.innerHTML =
+                `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" ` +
+                `fill="rgba(0,0,0,0.32)" font-size="12">` +
+                `No data yet — load a scenario and play a step</text>`;
+            return;
+        }
+
+        // Y range covers 0, per-step rewards, and the cumulative trace.
+        const all = [0];
+        rewardHistory.forEach((d) => {
+            all.push(d.reward);
+            all.push(d.cumulative);
+        });
+        let minY = Math.min(...all);
+        let maxY = Math.max(...all);
+        const span = Math.max(1, maxY - minY);
+        minY -= span * 0.05;
+        maxY += span * 0.05;
+
+        const n = rewardHistory.length;
+        const xAt = (i) => pad.left + (n <= 1 ? plotW / 2 : (i * plotW) / (n - 1));
+        const yAt = (v) => pad.top + plotH - ((v - minY) / (maxY - minY)) * plotH;
+
+        const barW = n <= 1 ? Math.min(36, plotW * 0.5) : Math.max(2, plotW / n - 3);
+        const zeroY = yAt(0);
+
+        const parts = [];
+        parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`);
+
+        // Zero baseline
+        parts.push(
+            `<line x1="${pad.left}" y1="${zeroY}" x2="${pad.left + plotW}" y2="${zeroY}" ` +
+            `stroke="rgba(0,0,0,0.18)" stroke-dasharray="2,4"/>`
+        );
+
+        // Y-axis tick labels
+        parts.push(`<text x="${pad.left - 8}" y="${pad.top + 4}" text-anchor="end">${maxY.toFixed(0)}</text>`);
+        parts.push(`<text x="${pad.left - 8}" y="${zeroY + 4}" text-anchor="end">0</text>`);
+        parts.push(`<text x="${pad.left - 8}" y="${pad.top + plotH}" text-anchor="end">${minY.toFixed(0)}</text>`);
+
+        // Per-step reward bars
+        rewardHistory.forEach((d, i) => {
+            const cx = xAt(i);
+            const rectX = cx - barW / 2;
+            const barTop = Math.min(zeroY, yAt(d.reward));
+            const barH = Math.abs(yAt(d.reward) - zeroY);
+            const color = d.reward >= 0 ? "#0071e3" : "#e30000";
+            parts.push(
+                `<rect x="${rectX.toFixed(2)}" y="${barTop.toFixed(2)}" ` +
+                `width="${barW.toFixed(2)}" height="${Math.max(1, barH).toFixed(2)}" ` +
+                `rx="1.5" fill="${color}" opacity="0.82"/>`
+            );
+        });
+
+        // Cumulative reward polyline
+        const linePts = rewardHistory
+            .map((d, i) => `${xAt(i).toFixed(2)},${yAt(d.cumulative).toFixed(2)}`)
+            .join(" ");
+        parts.push(
+            `<polyline points="${linePts}" fill="none" stroke="#1d1d1f" ` +
+            `stroke-width="1.75" stroke-linejoin="round"/>`
+        );
+        const last = rewardHistory[rewardHistory.length - 1];
+        parts.push(
+            `<circle cx="${xAt(n - 1).toFixed(2)}" cy="${yAt(last.cumulative).toFixed(2)}" ` +
+            `r="3" fill="#1d1d1f"/>`
+        );
+        parts.push(
+            `<text x="${(xAt(n - 1) - 6).toFixed(2)}" y="${(yAt(last.cumulative) - 6).toFixed(2)}" ` +
+            `text-anchor="end" fill="#1d1d1f" font-weight="600">` +
+            `&#931; ${last.cumulative.toFixed(1)}</text>`
+        );
+
+        // X-axis label
+        parts.push(
+            `<text x="${(pad.left + plotW / 2).toFixed(2)}" y="${(H - 4).toFixed(2)}" ` +
+            `text-anchor="middle">step ${n > 1 ? "1 \u2192 " + n : "1"}</text>`
+        );
+
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+        svg.innerHTML = parts.join("");
+    }
+
+    window.addEventListener("resize", renderRewardGraph);
+
     function updateStatus() {
         if (!observation) return;
         const g = (id) => document.getElementById(id);
@@ -436,6 +549,7 @@
         selectedIndex = null;
         trails.clear();
         prevCrashed = 0;
+        clearRewardGraph();
         try {
             const data = await api("/reset", { episode_id: id });
             observation = data.observation;
@@ -480,6 +594,9 @@
         try {
             const data = await api("/step", { action: { flight_index: selectedIndex } });
             observation = data.observation;
+
+            // Plot the per-step reward on the live graph.
+            recordReward(observation.time_step, Number(data.reward) || 0);
 
             if (data.reward >= 10) {
                 logLine(
@@ -690,7 +807,8 @@
         }
     });
 
-    // Kick off render loop
+    // Kick off render loop and paint the empty reward graph.
     requestAnimationFrame(render);
+    renderRewardGraph();
     logLine("[SYSTEM] SUPERCELL tower online. Press 1, 2, or 3 to load a scenario.", "sys");
 })();
