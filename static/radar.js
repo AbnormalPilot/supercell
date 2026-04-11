@@ -504,7 +504,8 @@
 
     async function gradeEpisode() {
         try {
-            const data = await api("/grade");
+            // /grade is a POST endpoint — pass {} so api() sends POST, not GET.
+            const data = await api("/grade", {});
             const el = document.getElementById("score-display");
             if (el) el.textContent = data.score.toFixed(3);
             logLine(
