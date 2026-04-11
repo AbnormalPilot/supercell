@@ -29,7 +29,14 @@ from models import (
     Weather,
     WeatherInfo,
 )
-from tasks import TASKS
+from tasks import (
+    CANONICAL_IDS,
+    PUBLIC_TASK_ORDER,
+    TASKS,
+    canonical_task_id,
+    list_tasks,
+    resolve_task_id,
+)
 
 
 # =============================================================================
@@ -74,10 +81,54 @@ INSTRUCTIONS = (
 )
 
 
+def _build_task_dict(internal_id: str) -> dict[str, Any]:
+    """Build a hackathon-style task dict (list-of-dicts form) for an id."""
+    data = TASKS[internal_id]()
+    canonical = canonical_task_id(internal_id)
+    difficulty_map = {
+        "easy": "easy",
+        "medium": "medium",
+        "hard": "hard",
+        "extra_hard": "hard",
+    }
+    return {
+        "id": canonical,
+        "internal_id": internal_id,
+        "name": data["task_name"],
+        "difficulty": difficulty_map.get(internal_id, "medium"),
+        "description": data["description"],
+        "max_steps": data["max_steps"],
+        "num_flights": len(data["flights"]),
+        "reward_range": [0.01, 0.99],
+        "grader": {
+            "id": canonical,
+            "type": "deterministic",
+            "endpoint": "/grader",
+            "reward_range": [0.01, 0.99],
+        },
+    }
+
+
+# Module-level list that the hackathon validator can introspect via
+#     from environment import ATCEnvironment; ATCEnvironment.TASKS
+# It's a list of dicts (matching the reference's StockExchangeEnv.TASKS)
+# rather than the dict-of-builders used internally.
+_ATC_TASKS_LIST: list[dict[str, Any]] = [
+    _build_task_dict(internal_id)
+    for internal_id in ("easy", "medium", "hard", "extra_hard")
+]
+
+
 class ATCEnvironment(Environment[ATCAction, ATCObservation, ATCState]):
     """VABB Mumbai ATC emergency triage environment (OpenEnv-compliant)."""
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = False
+
+    # Class attribute exposing tasks as a list-of-dicts — mirrors the
+    # passing reference submission's `StockExchangeEnv.TASKS` pattern.
+    # Each entry has id (canonical kebab-case), name, difficulty,
+    # description, reward_range, and a nested grader descriptor.
+    TASKS: list[dict[str, Any]] = _ATC_TASKS_LIST
 
     def __init__(self) -> None:
         super().__init__()
@@ -96,11 +147,12 @@ class ATCEnvironment(Environment[ATCAction, ATCObservation, ATCState]):
     ) -> ATCObservation:
         """Load a task scenario and return the initial observation.
 
-        `episode_id` is interpreted as the task id (easy/medium/hard/extra_hard).
+        `episode_id` accepts either the internal id (easy/medium/hard/
+        extra_hard) or the canonical kebab-case id (task-001-winter-haze,
+        task-002-pre-monsoon-squall, task-003-mumbai-monsoon-surge,
+        task-004-total-system-chaos).
         """
-        task_id = episode_id or "easy"
-        if task_id not in TASKS:
-            task_id = "easy"
+        task_id = resolve_task_id(episode_id or "easy")
 
         data = TASKS[task_id]()
         self._state = ATCState(
@@ -345,7 +397,7 @@ class ATCEnvironment(Environment[ATCAction, ATCObservation, ATCState]):
             landed_safely=self._state.landed_safely,
             crashed=self._state.crashed,
             total_flights=self._state.total_flights,
-            task_id=self._state.task_id,
+            task_id=canonical_task_id(self._state.task_id),
             task_name=self._state.task_name,
             episode_reward=self._state.episode_reward,
             instructions=INSTRUCTIONS,

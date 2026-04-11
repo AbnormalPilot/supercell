@@ -122,43 +122,26 @@ action_space:
       description: "0-based index into observation.flights — the inbound to clear for landing"
 
 tasks:
-  - id: easy
+  - id: task-001-winter-haze
     name: Winter Haze
     difficulty: easy
-    description: >
-      Calm November dawn at VABB. Four inbounds under clear skies —
-      one MAYDAY fuel emergency (AIC852) and one medical PAN-PAN
-      (IGO6E227). Priority call is unambiguous; solvable by a naive
-      priority-first policy.
+    description: Calm November dawn at VABB — one MAYDAY fuel emergency and one medical PAN-PAN with clear skies.
     reward_range: [0.01, 0.99]
 
-  - id: medium
+  - id: task-002-pre-monsoon-squall
     name: Pre-Monsoon Squall
     difficulty: medium
-    description: >
-      May afternoon, Arabian Sea squall line rolling in. Seven inbounds.
-      Visibility deteriorates from 8 nm to 1 nm over ~14 steps, then
-      eases. Heavy aircraft must land in the open window while AIC132
-      MAYDAY and low-fuel AXB471 race the clock.
+    description: May squall line closes visibility from 8 nm to 1 nm while seven inbounds race the window.
     reward_range: [0.01, 0.99]
 
-  - id: hard
+  - id: task-003-mumbai-monsoon-surge
     name: Mumbai Monsoon Surge
     difficulty: hard
-    description: >
-      July peak monsoon at VABB. Twelve diverted aircraft, three MAYDAYs,
-      two PAN-PANs. Traps include a weather-blocked MAYDAY (IGO6E2043),
-      a silent fuel trap (IGO6E5393 — NONE status, 4 min fuel), and a
-      SUPER-wake A380 that creates cascading separation penalties if
-      mis-sequenced. Frontier models consistently fail this one.
+    description: Twelve diverted aircraft, three MAYDAYs, fuel traps, oscillating thunderstorm. Fuel-first sequencing beats emergency-label heuristics.
     reward_range: [0.01, 0.99]
 
-  - id: extra_hard
+  - id: task-004-total-system-chaos
     name: Total System Chaos
     difficulty: hard
-    description: >
-      Hidden bonus scenario. Twenty aircraft, five MAYDAYs with critical
-      fuel, four medical PAN-PANs, VFR-only business jets, and a weather
-      timeline that oscillates between 0.5 nm and 6 nm four times over
-      80 steps.
+    description: Hidden bonus — twenty aircraft, five critical-fuel MAYDAYs, VFR-only jets, violently oscillating weather.
     reward_range: [0.01, 0.99]

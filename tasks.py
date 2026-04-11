@@ -620,6 +620,50 @@ TASKS: dict[str, Callable[[], dict[str, Any]]] = {
 }
 
 
+# Canonical kebab-case IDs the hackathon validator prefers, aliased
+# back to the simple internal IDs. The public API (/tasks, /grader,
+# openenv.yaml) uses the CANONICAL_IDS; /reset accepts either form.
+CANONICAL_IDS: dict[str, str] = {
+    "easy": "task-001-winter-haze",
+    "medium": "task-002-pre-monsoon-squall",
+    "hard": "task-003-mumbai-monsoon-surge",
+    "extra_hard": "task-004-total-system-chaos",
+}
+INTERNAL_IDS: dict[str, str] = {v: k for k, v in CANONICAL_IDS.items()}
+PUBLIC_TASK_ORDER: list[str] = [
+    CANONICAL_IDS["easy"],
+    CANONICAL_IDS["medium"],
+    CANONICAL_IDS["hard"],
+    CANONICAL_IDS["extra_hard"],
+]
+
+
+def resolve_task_id(task_id: str | None) -> str:
+    """Normalize any accepted task id form to the internal id.
+
+    Accepts: internal id ("easy"), canonical id ("task-001-winter-haze"),
+    case variants, and returns the matching internal id (or "easy" as a
+    safe default).
+    """
+    if not task_id:
+        return "easy"
+    key = task_id.strip().lower()
+    if key in TASKS:
+        return key
+    if key in INTERNAL_IDS:
+        return INTERNAL_IDS[key]
+    # tolerate bare "task-001" or "001"
+    for canon, internal in INTERNAL_IDS.items():
+        if key == canon or key == canon.split("-", 1)[-1]:
+            return internal
+    return "easy"
+
+
+def canonical_task_id(internal_id: str) -> str:
+    """Return the canonical public id for a given internal id."""
+    return CANONICAL_IDS.get(internal_id, internal_id)
+
+
 def list_tasks() -> list[dict[str, Any]]:
     """List all available tasks for the /tasks endpoint."""
     result = []

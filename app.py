@@ -22,7 +22,15 @@ from pydantic import BaseModel
 
 from environment import ATCEnvironment
 from models import ATCAction, ATCObservation
-from tasks import TASKS, list_tasks
+from tasks import (
+    CANONICAL_IDS,
+    INTERNAL_IDS,
+    PUBLIC_TASK_ORDER,
+    TASKS,
+    canonical_task_id,
+    list_tasks,
+    resolve_task_id,
+)
 
 # =============================================================================
 # Singleton environment
@@ -135,6 +143,7 @@ def create_app() -> FastAPI:
     # POST /grade/{task_id}     → reset + run rollout + grade one task.
 
     # Static per-task fields returned by /tasks and /tasks/{id}.
+    # Keyed by INTERNAL id; canonicalization happens at the edge.
     _TASK_EXTRA: dict[str, dict[str, Any]] = {
         "easy": {
             "difficulty": "easy",
@@ -181,34 +190,46 @@ def create_app() -> FastAPI:
         },
     }
 
-    def _task_detail(task_id: str) -> dict[str, Any]:
+    def _task_detail(internal_id: str) -> dict[str, Any]:
         """Detail payload for a single task — matches the reference shape."""
-        data = TASKS[task_id]()
-        extra = _TASK_EXTRA.get(task_id, {})
+        data = TASKS[internal_id]()
+        extra = _TASK_EXTRA.get(internal_id, {})
         return {
-            "id": task_id,
+            "id": canonical_task_id(internal_id),
+            "internal_id": internal_id,
             "name": data["task_name"],
             "difficulty": extra.get("difficulty", "medium"),
             "description": data["description"],
             "objective": extra.get("objective", data["description"]),
-            "scenario": extra.get("scenario", task_id),
+            "scenario": extra.get("scenario", internal_id),
             "weather_regime": extra.get("weather_regime", "unknown"),
             "max_steps": data["max_steps"],
             "num_flights": len(data["flights"]),
+            "reward_range": [0.01, 0.99],
+            "has_grader": True,
+            "grader": {
+                "id": canonical_task_id(internal_id),
+                "type": "deterministic",
+                "endpoint": "/grader",
+                "reward_range": [0.01, 0.99],
+            },
         }
 
-    def _task_summary(task_id: str) -> dict[str, Any]:
+    def _task_summary(internal_id: str) -> dict[str, Any]:
         """Compact payload for /tasks listing."""
-        data = TASKS[task_id]()
-        extra = _TASK_EXTRA.get(task_id, {})
+        data = TASKS[internal_id]()
+        extra = _TASK_EXTRA.get(internal_id, {})
         return {
-            "id": task_id,
+            "id": canonical_task_id(internal_id),
+            "internal_id": internal_id,
             "name": data["task_name"],
             "difficulty": extra.get("difficulty", "medium"),
             "objective": extra.get("objective", data["description"])[:240],
             "max_steps": data["max_steps"],
             "num_flights": len(data["flights"]),
             "description": data["description"],
+            "reward_range": [0.01, 0.99],
+            "has_grader": True,
         }
 
     @app.get("/tasks", tags=["Environment Info"])
@@ -217,16 +238,20 @@ def create_app() -> FastAPI:
 
     @app.get("/tasks/{task_id}", tags=["Environment Info"])
     async def task_by_id(task_id: str) -> dict[str, Any]:
-        if task_id not in TASKS:
+        internal = resolve_task_id(task_id)
+        if internal not in TASKS:
             raise HTTPException(status_code=404, detail=f"Unknown task: {task_id}")
-        return _task_detail(task_id)
+        return _task_detail(internal)
 
     # -- Grader ------------------------------------------------------
     def _run_task_rollout(task_id: str) -> float:
-        """Reset to task, run priority-first heuristic, return [0,1] score."""
+        """Reset to task (accepts either id form), run priority-first
+        heuristic, return a (0.01, 0.99) score."""
+        from graders import strict_score
         from models import ATCAction
 
-        _ENV_SINGLETON.reset(episode_id=task_id)
+        internal = resolve_task_id(task_id)
+        _ENV_SINGLETON.reset(episode_id=internal)
         priority_key = {"MAYDAY": 0, "PAN_PAN": 1, "NONE": 2}
         safety = 0
         while safety < 150:
@@ -247,40 +272,45 @@ def create_app() -> FastAPI:
             obs = _ENV_SINGLETON.step(ATCAction(flight_index=idx))
             if obs.done:
                 break
-        return float(_ENV_SINGLETON.grade())
+        return strict_score(_ENV_SINGLETON.grade())
 
     @app.get("/grader", tags=["Environment Info"])
     async def grader_run_all() -> dict[str, Any]:
         """Run every task's grader and return per-task + overall scores.
 
-        This is the canonical "task validation" endpoint: the hackathon
-        evaluator uses it to enumerate tasks and verify each returns a
-        valid score in [0, 1]. Matches the reference submission shape
-        (scores: list, score: float, task_score: float).
+        This is the canonical "task validation" endpoint. Task IDs are
+        the canonical kebab-case form. Matches the reference submission
+        shape (scores: list, score: float, task_score: float).
         """
         per_task = []
-        for tid in TASKS:
-            score = _run_task_rollout(tid)
-            score = max(0.0, min(1.0, score))
+        for internal_id in TASKS:
+            score = _run_task_rollout(internal_id)
+            canon = canonical_task_id(internal_id)
             per_task.append({
-                "task_id": tid,
+                "task_id": canon,
+                "id": canon,
                 "score": score,
                 "task_score": score,
+                "reward": score,
             })
         overall = sum(e["score"] for e in per_task) / max(1, len(per_task))
         return {
             "scores": per_task,
             "score": overall,
             "task_score": overall,
+            "count": len(per_task),
+            "num_tasks": len(per_task),
         }
 
     # -- Grade (current episode) -------------------------------------
     @app.post("/grade", response_model=GradeResponse, tags=["Environment Info"])
     async def grade() -> GradeResponse:
-        score = _ENV_SINGLETON.grade()
+        from graders import strict_score
+
+        score = strict_score(_ENV_SINGLETON.grade())
         s = _ENV_SINGLETON.state
         return GradeResponse(
-            task_id=s.task_id,
+            task_id=canonical_task_id(s.task_id),
             score=score,
             landing_log=list(s.landing_log),
             crash_log=list(s.crash_log),
@@ -294,20 +324,23 @@ def create_app() -> FastAPI:
 
     @app.post("/grade/{task_id}", response_model=GradeResponse, tags=["Environment Info"])
     async def grade_task(task_id: str) -> GradeResponse:
-        if task_id not in TASKS:
+        from graders import strict_score
+
+        internal = resolve_task_id(task_id)
+        if internal not in TASKS:
             return GradeResponse(
-                task_id=task_id,
-                score=0.0,
+                task_id=canonical_task_id(internal),
+                score=0.01,
                 landing_log=[],
                 crash_log=[],
                 steps_used=0,
                 episode_reward=0.0,
             )
-        _run_task_rollout(task_id)
+        _run_task_rollout(internal)
         s = _ENV_SINGLETON.state
         return GradeResponse(
-            task_id=s.task_id,
-            score=_ENV_SINGLETON.grade(),
+            task_id=canonical_task_id(s.task_id),
+            score=strict_score(_ENV_SINGLETON.grade()),
             landing_log=list(s.landing_log),
             crash_log=list(s.crash_log),
             steps_used=s.time_step,
