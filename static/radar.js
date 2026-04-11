@@ -354,13 +354,55 @@
         renderRewardGraph();
     }
 
+    /**
+     * Build a smooth SVG `d` string from a list of [x,y] points using a
+     * Catmull-Rom → cubic Bézier conversion. Gives a silky curve without
+     * overshoots, mirroring the reference area-chart aesthetic.
+     */
+    function smoothPath(points, tension = 0.5) {
+        if (points.length === 0) return "";
+        if (points.length === 1) {
+            return `M ${points[0][0]} ${points[0][1]}`;
+        }
+        let d = `M ${points[0][0]} ${points[0][1]}`;
+        for (let i = 0; i < points.length - 1; i++) {
+            const p0 = points[i - 1] || points[i];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const p3 = points[i + 2] || p2;
+            const c1x = p1[0] + ((p2[0] - p0[0]) * tension) / 6;
+            const c1y = p1[1] + ((p2[1] - p0[1]) * tension) / 6;
+            const c2x = p2[0] - ((p3[0] - p1[0]) * tension) / 6;
+            const c2y = p2[1] - ((p3[1] - p1[1]) * tension) / 6;
+            d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
+        }
+        return d;
+    }
+
+    /** Pick "nice" round-number tick marks for a Y range. */
+    function niceTicks(minV, maxV, count = 4) {
+        const range = Math.max(1e-9, maxV - minV);
+        const rawStep = range / count;
+        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const norm = rawStep / mag;
+        let step;
+        if (norm < 1.5) step = mag;
+        else if (norm < 3) step = 2 * mag;
+        else if (norm < 7) step = 5 * mag;
+        else step = 10 * mag;
+        const ticks = [];
+        const start = Math.ceil(minV / step) * step;
+        for (let v = start; v <= maxV + 1e-9; v += step) ticks.push(v);
+        return ticks;
+    }
+
     function renderRewardGraph() {
         const svg = document.getElementById("reward-graph");
         if (!svg) return;
 
-        const W = svg.clientWidth || 600;
-        const H = svg.clientHeight || 160;
-        const pad = { top: 14, right: 14, bottom: 22, left: 44 };
+        const W = svg.clientWidth || 760;
+        const H = svg.clientHeight || 200;
+        const pad = { top: 30, right: 58, bottom: 28, left: 16 };
         const plotW = Math.max(1, W - pad.left - pad.right);
         const plotH = Math.max(1, H - pad.top - pad.bottom);
 
@@ -368,12 +410,12 @@
             svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
             svg.innerHTML =
                 `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" ` +
-                `fill="rgba(0,0,0,0.32)" font-size="12">` +
+                `fill="rgba(0,0,0,0.32)" font-size="13">` +
                 `No data yet — load a scenario and play a step</text>`;
             return;
         }
 
-        // Y range covers 0, per-step rewards, and the cumulative trace.
+        // Y range covers 0, per-step rewards, and cumulative trace, padded a bit.
         const all = [0];
         rewardHistory.forEach((d) => {
             all.push(d.reward);
@@ -382,68 +424,140 @@
         let minY = Math.min(...all);
         let maxY = Math.max(...all);
         const span = Math.max(1, maxY - minY);
-        minY -= span * 0.05;
-        maxY += span * 0.05;
+        minY -= span * 0.08;
+        maxY += span * 0.12;  // extra headroom for the tooltip pill
 
         const n = rewardHistory.length;
         const xAt = (i) => pad.left + (n <= 1 ? plotW / 2 : (i * plotW) / (n - 1));
         const yAt = (v) => pad.top + plotH - ((v - minY) / (maxY - minY)) * plotH;
 
-        const barW = n <= 1 ? Math.min(36, plotW * 0.5) : Math.max(2, plotW / n - 3);
         const zeroY = yAt(0);
+        const ticks = niceTicks(minY, maxY, 4);
 
         const parts = [];
-        parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`);
 
-        // Zero baseline
+        // -- defs: gradients, drop shadow, clip --
+        parts.push(`
+<defs>
+    <linearGradient id="rewardFillPos" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0071e3" stop-opacity="0.42"/>
+        <stop offset="55%" stop-color="#0071e3" stop-opacity="0.14"/>
+        <stop offset="100%" stop-color="#0071e3" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rewardFillNeg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#e30000" stop-opacity="0"/>
+        <stop offset="100%" stop-color="#e30000" stop-opacity="0.28"/>
+    </linearGradient>
+    <filter id="rewardTipShadow" x="-40%" y="-40%" width="180%" height="180%">
+        <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0071e3" flood-opacity="0.35"/>
+    </filter>
+    <filter id="rewardLineShadow" x="-10%" y="-10%" width="120%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+</defs>`);
+
+        // -- Horizontal grid lines with right-side labels --
+        ticks.forEach((t) => {
+            const y = yAt(t).toFixed(2);
+            parts.push(
+                `<line x1="${pad.left}" y1="${y}" x2="${pad.left + plotW}" y2="${y}" ` +
+                `stroke="rgba(0,0,0,0.07)" stroke-width="1"/>`
+            );
+            parts.push(
+                `<text x="${pad.left + plotW + 8}" y="${(+y + 4).toFixed(2)}" ` +
+                `font-family="SF Pro Text, -apple-system, sans-serif" font-size="11" ` +
+                `fill="rgba(0,0,0,0.45)" text-anchor="start">${t.toFixed(0)}</text>`
+            );
+        });
+
+        // -- Emphasized zero baseline --
         parts.push(
-            `<line x1="${pad.left}" y1="${zeroY}" x2="${pad.left + plotW}" y2="${zeroY}" ` +
-            `stroke="rgba(0,0,0,0.18)" stroke-dasharray="2,4"/>`
+            `<line x1="${pad.left}" y1="${zeroY.toFixed(2)}" x2="${pad.left + plotW}" y2="${zeroY.toFixed(2)}" ` +
+            `stroke="rgba(0,0,0,0.22)" stroke-width="1" stroke-dasharray="3,4"/>`
         );
 
-        // Y-axis tick labels
-        parts.push(`<text x="${pad.left - 8}" y="${pad.top + 4}" text-anchor="end">${maxY.toFixed(0)}</text>`);
-        parts.push(`<text x="${pad.left - 8}" y="${zeroY + 4}" text-anchor="end">0</text>`);
-        parts.push(`<text x="${pad.left - 8}" y="${pad.top + plotH}" text-anchor="end">${minY.toFixed(0)}</text>`);
-
-        // Per-step reward bars
+        // -- Per-step reward bars (thin, behind the line) --
+        const barW = n <= 1 ? 10 : Math.max(2, (plotW / n) * 0.55);
         rewardHistory.forEach((d, i) => {
             const cx = xAt(i);
-            const rectX = cx - barW / 2;
             const barTop = Math.min(zeroY, yAt(d.reward));
             const barH = Math.abs(yAt(d.reward) - zeroY);
             const color = d.reward >= 0 ? "#0071e3" : "#e30000";
             parts.push(
-                `<rect x="${rectX.toFixed(2)}" y="${barTop.toFixed(2)}" ` +
+                `<rect x="${(cx - barW / 2).toFixed(2)}" y="${barTop.toFixed(2)}" ` +
                 `width="${barW.toFixed(2)}" height="${Math.max(1, barH).toFixed(2)}" ` +
-                `rx="1.5" fill="${color}" opacity="0.82"/>`
+                `rx="2" fill="${color}" opacity="0.38"/>`
             );
         });
 
-        // Cumulative reward polyline
-        const linePts = rewardHistory
-            .map((d, i) => `${xAt(i).toFixed(2)},${yAt(d.cumulative).toFixed(2)}`)
-            .join(" ");
+        // -- Cumulative area (gradient fill) + smooth line --
+        const points = rewardHistory.map((d, i) => [xAt(i), yAt(d.cumulative)]);
+        const linePath = smoothPath(points, 0.6);
+
+        if (points.length >= 2) {
+            const firstX = points[0][0].toFixed(2);
+            const lastX = points[points.length - 1][0].toFixed(2);
+            const areaPath = `${linePath} L ${lastX} ${zeroY.toFixed(2)} L ${firstX} ${zeroY.toFixed(2)} Z`;
+            // Pick fill gradient based on whether the ending sits above or below zero
+            const fillId = rewardHistory[n - 1].cumulative >= 0 ? "rewardFillPos" : "rewardFillNeg";
+            parts.push(`<path d="${areaPath}" fill="url(#${fillId})"/>`);
+        }
+
         parts.push(
-            `<polyline points="${linePts}" fill="none" stroke="#1d1d1f" ` +
-            `stroke-width="1.75" stroke-linejoin="round"/>`
-        );
-        const last = rewardHistory[rewardHistory.length - 1];
-        parts.push(
-            `<circle cx="${xAt(n - 1).toFixed(2)}" cy="${yAt(last.cumulative).toFixed(2)}" ` +
-            `r="3" fill="#1d1d1f"/>`
-        );
-        parts.push(
-            `<text x="${(xAt(n - 1) - 6).toFixed(2)}" y="${(yAt(last.cumulative) - 6).toFixed(2)}" ` +
-            `text-anchor="end" fill="#1d1d1f" font-weight="600">` +
-            `&#931; ${last.cumulative.toFixed(1)}</text>`
+            `<path d="${linePath}" fill="none" stroke="#1d1d1f" stroke-width="2.5" ` +
+            `stroke-linecap="round" stroke-linejoin="round" filter="url(#rewardLineShadow)"/>`
         );
 
-        // X-axis label
+        // -- Latest point — white ring with dark core --
+        const last = rewardHistory[n - 1];
+        const lastPt = points[points.length - 1];
         parts.push(
-            `<text x="${(pad.left + plotW / 2).toFixed(2)}" y="${(H - 4).toFixed(2)}" ` +
-            `text-anchor="middle">step ${n > 1 ? "1 \u2192 " + n : "1"}</text>`
+            `<circle cx="${lastPt[0].toFixed(2)}" cy="${lastPt[1].toFixed(2)}" r="6" ` +
+            `fill="#ffffff" stroke="#1d1d1f" stroke-width="2"/>`
         );
+        parts.push(
+            `<circle cx="${lastPt[0].toFixed(2)}" cy="${lastPt[1].toFixed(2)}" r="2.5" ` +
+            `fill="#0071e3"/>`
+        );
+
+        // -- Tooltip pill with the cumulative total --
+        const tipLabel = `\u03A3 ${last.cumulative >= 0 ? "+" : ""}${last.cumulative.toFixed(1)}`;
+        const tipW = Math.max(56, tipLabel.length * 8 + 18);
+        const tipH = 26;
+        let tipX = lastPt[0] - tipW / 2;
+        let tipY = lastPt[1] - tipH - 14;
+        // Clamp to plot area
+        tipX = Math.max(pad.left, Math.min(pad.left + plotW - tipW, tipX));
+        // If clipping above, flip below the point
+        if (tipY < 2) tipY = Math.min(pad.top + plotH - tipH - 4, lastPt[1] + 14);
+
+        // Tail anchor (small triangle) pointing from pill toward the point
+        const tailBase = Math.max(tipX + 12, Math.min(tipX + tipW - 12, lastPt[0]));
+        const tailTipY = lastPt[1] > tipY ? tipY + tipH : tipY;
+        const tailDir = lastPt[1] > tipY ? 5 : -5;
+
+        parts.push(`
+<g filter="url(#rewardTipShadow)">
+    <rect x="${tipX.toFixed(2)}" y="${tipY.toFixed(2)}" width="${tipW}" height="${tipH}" rx="13" ry="13" fill="#0071e3"/>
+    <polygon points="${(tailBase - 4).toFixed(2)},${tailTipY.toFixed(2)} ${(tailBase + 4).toFixed(2)},${tailTipY.toFixed(2)} ${tailBase.toFixed(2)},${(tailTipY + tailDir).toFixed(2)}" fill="#0071e3"/>
+    <text x="${(tipX + tipW / 2).toFixed(2)}" y="${(tipY + tipH / 2 + 4).toFixed(2)}" ` +
+        `text-anchor="middle" font-family="SF Pro Display, -apple-system, sans-serif" ` +
+        `font-size="13" font-weight="600" fill="#ffffff">${tipLabel}</text>
+</g>`);
+
+        // -- X-axis endpoints --
+        parts.push(
+            `<text x="${xAt(0).toFixed(2)}" y="${(H - 6).toFixed(2)}" text-anchor="start" ` +
+            `font-family="SF Pro Text, -apple-system, sans-serif" font-size="10" ` +
+            `fill="rgba(0,0,0,0.45)">step 1</text>`
+        );
+        if (n > 1) {
+            parts.push(
+                `<text x="${xAt(n - 1).toFixed(2)}" y="${(H - 6).toFixed(2)}" text-anchor="end" ` +
+                `font-family="SF Pro Text, -apple-system, sans-serif" font-size="10" ` +
+                `fill="rgba(0,0,0,0.45)">step ${n}</text>`
+            );
+        }
 
         svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
         svg.innerHTML = parts.join("");
