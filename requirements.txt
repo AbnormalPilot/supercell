@@ -5,3 +5,5 @@ openai
 python-multipart
 openenv-core
 websockets
+pyyaml
+httpx

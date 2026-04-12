@@ -1,44 +1,34 @@
 # ================================================================
-# SUPERCELL — CSIA Mumbai ATC (Python-Only)
-# Custom UI with animated radar simulation
-# HF Spaces expects port 7860 by default
+# SUPERCELL — VABB Mumbai ATC Emergency Triage
+# Matches the reference submission's Dockerfile architecture:
+# pip install to SYSTEM Python so bare `python` can import everything.
 # ================================================================
 
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install uv for fast Python dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=7860
 
 WORKDIR /app
 
-# Copy Python deps first (cache layer)
-COPY pyproject.toml uv.lock* README.md ./
-RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy application code (flat root + server/ package for openenv validate)
-COPY app.py ./
-COPY models.py ./
-COPY tasks.py ./
-COPY graders.py ./
-COPY environment.py ./
-COPY inference.py ./
-COPY openenv.yaml ./
-COPY server/ ./server/
+# Install deps to SYSTEM Python (not a venv) so `python` and
+# `docker exec ... python -c "from server.environment import ..."` work.
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir -r requirements.txt
 
-# Copy static files (Monsoon Mumbai tower UI)
-COPY static/ ./static/
-
-# HF Spaces uses port 7860
-ENV PYTHONUNBUFFERED=1
-ENV PORT=7860
+# Copy everything
+COPY . .
 
 EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
 
-CMD ["sh", "-c", "uv run uvicorn server.app:app --host 0.0.0.0 --port ${PORT:-7860}"]
+# Start via uvicorn directly (not uv run) — system Python has all deps.
+CMD ["sh", "-c", "uvicorn server.app:app --host 0.0.0.0 --port ${PORT:-7860}"]
