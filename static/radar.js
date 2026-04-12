@@ -830,15 +830,16 @@
      */
     async function fetchAndLogGrade() {
         try {
-            // /grade is a POST endpoint — pass {} so api() sends POST, not GET.
             const data = await api("/grade", {});
             const el = document.getElementById("score-display");
-            if (el) el.textContent = data.score.toFixed(3);
+            if (el) el.textContent = (data.score || 0).toFixed(3);
+
+            const taskId = (data.task_id || "").toUpperCase();
+            const score = (data.score || 0).toFixed(3);
+            const taskScore = (data.task_score || data.score || 0).toFixed(3);
 
             logLine(
-                `[SCORE] ${data.task_id.toUpperCase()} · ${data.score.toFixed(3)} · ` +
-                `landed ${data.landing_log.length} · crashed ${data.crash_log.length} · ` +
-                `reward ${data.episode_reward.toFixed(1)}`,
+                `[SCORE] ${taskId} · ${score} · task_score ${taskScore}`,
                 "score"
             );
         } catch (e) {
