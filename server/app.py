@@ -119,17 +119,17 @@ def metadata() -> Dict[str, Any]:
 @app.get("/tasks")
 def tasks() -> Dict[str, Any]:
     difficulty_map = {"easy": "easy", "medium": "medium", "hard": "hard", "extra_hard": "hard"}
+    canon_ids = [canonical_task_id(tid) for tid in TASKS]
     return {
         "tasks": [
             {
                 "id": canonical_task_id(tid),
+                "task_id": canonical_task_id(tid),   # alias — some validators read task_id
                 "name": TASKS[tid]()["task_name"],
                 "difficulty": difficulty_map.get(tid, "medium"),
                 "objective": TASKS[tid]()["description"][:240],
                 "max_steps": TASKS[tid]()["max_steps"],
                 "description": TASKS[tid]()["description"],
-                # Grader discovery fields — the Scaler portal counts tasks
-                # that advertise a grader via these fields.
                 "has_grader": True,
                 "grader": f"/grader?task_id={canonical_task_id(tid)}",
                 "grader_url": f"/grader?task_id={canonical_task_id(tid)}",
@@ -137,7 +137,9 @@ def tasks() -> Dict[str, Any]:
                 "reward_range": [0.01, 0.99],
             }
             for tid in TASKS
-        ]
+        ],
+        "task_ids": canon_ids,
+        "total": len(canon_ids),
     }
 
 
