@@ -117,30 +117,19 @@ def metadata() -> Dict[str, Any]:
 
 
 @app.get("/tasks")
-def tasks() -> Dict[str, Any]:
+def tasks():
+    """Return flat list of tasks — matches GIRESH458 passing submission shape."""
     difficulty_map = {"easy": "easy", "medium": "medium", "hard": "hard", "extra_hard": "hard"}
-    canon_ids = [canonical_task_id(tid) for tid in TASKS]
-    return {
-        "tasks": [
-            {
-                "id": canonical_task_id(tid),
-                "task_id": canonical_task_id(tid),   # alias — some validators read task_id
-                "name": TASKS[tid]()["task_name"],
-                "difficulty": difficulty_map.get(tid, "medium"),
-                "objective": TASKS[tid]()["description"][:240],
-                "max_steps": TASKS[tid]()["max_steps"],
-                "description": TASKS[tid]()["description"],
-                "has_grader": True,
-                "grader": f"/grader?task_id={canonical_task_id(tid)}",
-                "grader_url": f"/grader?task_id={canonical_task_id(tid)}",
-                "grader_endpoint": "/grader",
-                "reward_range": [0.01, 0.99],
-            }
-            for tid in TASKS
-        ],
-        "task_ids": canon_ids,
-        "total": len(canon_ids),
-    }
+    return [
+        {
+            "task_id": canonical_task_id(tid),
+            "name": TASKS[tid]()["task_name"],
+            "difficulty": difficulty_map.get(tid, "medium"),
+            "description": TASKS[tid]()["description"],
+            "max_steps": TASKS[tid]()["max_steps"],
+        }
+        for tid in TASKS
+    ]
 
 
 @app.get("/tasks/{task_id}")
