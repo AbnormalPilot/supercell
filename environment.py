@@ -14,8 +14,33 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from openenv.core.env_server.interfaces import Environment
-from openenv.core.env_server.types import EnvironmentMetadata
+# openenv-core may not be installed in the hackathon validator's Python
+# environment. If the import fails, stub Environment as object (no ABC
+# enforcement) and EnvironmentMetadata as a plain dict wrapper.
+try:
+    from openenv.core.env_server.interfaces import Environment
+    from openenv.core.env_server.types import EnvironmentMetadata
+except Exception:
+    from abc import ABC
+    from typing import Generic, TypeVar
+
+    _T1 = TypeVar("_T1")
+    _T2 = TypeVar("_T2")
+    _T3 = TypeVar("_T3")
+
+    class Environment(ABC, Generic[_T1, _T2, _T3]):  # type: ignore[no-redef]
+        """Minimal stub when openenv-core is absent."""
+
+        SUPPORTS_CONCURRENT_SESSIONS = False
+
+        def __init__(self, *a: Any, **kw: Any) -> None:
+            pass
+
+    class EnvironmentMetadata:  # type: ignore[no-redef]
+        """Dict-like stub for get_metadata()."""
+
+        def __init__(self, **kw: Any) -> None:
+            self.__dict__.update(kw)
 
 from graders import grade_episode
 from models import (

@@ -13,8 +13,20 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import Any
 
-from openenv.core.env_server.types import Action, Observation, State
 from pydantic import BaseModel, ConfigDict, Field
+
+# The canonical OpenEnv base types add done/reward/metadata fields and
+# are used by openenv-core's create_app serializer. However, the
+# hackathon validator may import our code in an environment where
+# openenv-core is NOT installed. If the import fails, fall back to
+# plain Pydantic BaseModel — the field declarations we add below are
+# a strict superset anyway.
+try:
+    from openenv.core.env_server.types import Action, Observation, State
+except Exception:  # ImportError or ModuleNotFoundError
+    Action = BaseModel  # type: ignore[assignment,misc]
+    Observation = BaseModel  # type: ignore[assignment,misc]
+    State = BaseModel  # type: ignore[assignment,misc]
 
 
 # =============================================================================
@@ -112,11 +124,9 @@ class WeatherInfo(BaseModel):
 
 
 class ATCAction(Action):
-    """Agent action: clear a specific inbound flight to land.
+    """Agent action: clear a specific inbound flight to land."""
 
-    Inherits `metadata: Dict[str, Any]` from the canonical Action base.
-    """
-
+    metadata: dict[str, Any] = Field(default_factory=dict)
     flight_index: int = Field(
         default=0,
         ge=0,
@@ -125,12 +135,12 @@ class ATCAction(Action):
 
 
 class ATCObservation(Observation):
-    """VABB tower observation returned by `reset()` and `step()`.
+    """VABB tower observation returned by `reset()` and `step()`."""
 
-    Inherits `done`, `reward`, and `metadata` from the canonical
-    Observation base (the HTTP serializer pulls `reward` and `done`
-    out to the response envelope).
-    """
+    # Declared explicitly so they exist even when Observation = BaseModel
+    done: bool = False
+    reward: float | int | bool | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     flights: list[FlightInfo] = Field(default_factory=list)
     weather: WeatherInfo = Field(default_factory=WeatherInfo)
@@ -149,10 +159,14 @@ class ATCObservation(Observation):
 class ATCState(State):
     """Internal episode state.
 
-    Inherits `episode_id` and `step_count` from the canonical State base.
-    Uses `extra="allow"` to tolerate the domain fields we append.
+    When openenv-core is installed, inherits `episode_id` and `step_count`
+    from the canonical State base. When absent (validator sandbox), we
+    declare them explicitly so the model works either way.
     """
 
+    # Declared explicitly so they exist even when State = BaseModel
+    episode_id: str | None = None
+    step_count: int = 0
     task_id: str = "easy"
     task_name: str = ""
     time_step: int = 0
