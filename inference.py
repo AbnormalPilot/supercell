@@ -6,7 +6,7 @@ OpenEnv hackathon baseline inference script.
 Required environment variables (per hackathon spec):
     API_BASE_URL       LLM endpoint          (default: https://router.huggingface.co/v1)
     MODEL_NAME         Model identifier       (default: Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN           HuggingFace / API key  (also accepts API_KEY)
+    HF_TOKEN           HuggingFace / API key
 
 Optional:
     ENV_URL            Running environment URL      (default: http://localhost:7860)
@@ -116,11 +116,12 @@ except Exception:  # pragma: no cover — fallback exercised in validator sandbo
 # Configuration
 # =============================================================================
 
-API_KEY: Optional[str] = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-API_BASE_URL: str = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 ENV_URL: str = os.getenv("ENV_URL", "http://localhost:7860")
-LOCAL_IMAGE_NAME: Optional[str] = os.getenv("LOCAL_IMAGE_NAME")
+# (LOCAL_IMAGE_NAME already declared above with other env vars)
 TASK_NAME: str = os.getenv("SUPERCELL_TASK", "hard")
 BENCHMARK: str = "supercell"
 
@@ -368,10 +369,10 @@ def run_episode() -> None:
         if LOCAL_IMAGE_NAME:
             docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
 
-        if not API_KEY:
+        if not HF_TOKEN:
             log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
             started = True
-            print("[DEBUG] Missing HF_TOKEN/API_KEY", file=sys.stderr, flush=True)
+            print("[DEBUG] Missing HF_TOKEN/HF_TOKEN", file=sys.stderr, flush=True)
             return
 
         http = EnvClient(base_url=active_url, timeout=30.0)
@@ -387,7 +388,7 @@ def run_episode() -> None:
             )
             return
 
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
         print(
             f"[DEBUG] LLM client source: {_OPENAI_CLIENT_SOURCE}",
             file=sys.stderr,
