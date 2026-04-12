@@ -604,7 +604,7 @@
      * Returns null if there are no flights.
      */
     function bestDefaultIndex() {
-        if (!observation || !observation.flights || !observation.flights.length) {
+        if (!observation || !observation.flights || observation.flights.length === 0) {
             return null;
         }
         const priority = { MAYDAY: 0, PAN_PAN: 1, NONE: 2 };
@@ -780,6 +780,7 @@
             autoPlaying
             && observation
             && !observation.done
+            && observation.flights
             && observation.flights.length > 0
         ) {
             const i = bestDefaultIndex();
@@ -857,12 +858,12 @@
      * - If the episode is already done: just grade it.
      */
     async function gradeEpisode() {
-        if (!observation) {
+        if (!observation || !observation.flights) {
             logLine("[SYSTEM] No scenario loaded. Pick one on the left first.", "sys");
             return;
         }
 
-        const fresh = !observation.done && observation.time_step === 0;
+        const fresh = !observation.done && (observation.time_step || 0) === 0;
         if (fresh) {
             // Episode is un-played — run auto triage to completion first,
             // then fall through to grading.
