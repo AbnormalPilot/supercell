@@ -244,9 +244,34 @@ def grade_post() -> Dict[str, Any]:
 
 
 @app.get("/grader")
-def grader(task_id: str = "") -> Dict[str, Any]:
+def grader_get(task_id: str = "") -> Dict[str, Any]:
+    """GET variant — runs all tasks and returns aggregate scores."""
     if task_id:
         return _reference_grade(str(task_id))
+    scores = [_reference_grade(canonical_task_id(tid)) for tid in TASKS]
+    aggregate = sum(item["score"] for item in scores) / float(max(len(scores), 1))
+    agg = strict_score(float(aggregate))
+    return {
+        "scores": scores,
+        "score": agg,
+        "task_score": agg,
+    }
+
+
+@app.post("/grader")
+def grader_post(payload: Dict[str, Any] = Body(default_factory=dict)) -> Dict[str, Any]:
+    """POST variant — the hackathon validator calls this.
+
+    Accepts:
+      {} or no body          → grade all tasks
+      {"task_id": "..."}     → grade a single task
+      {"episode_id": "..."}  → grade a single task (alias)
+    """
+    tid = payload.get("task_id") or payload.get("episode_id") or ""
+    if tid:
+        internal = resolve_task_id(str(tid))
+        return _reference_grade(canonical_task_id(internal))
+    # No task specified → grade all
     scores = [_reference_grade(canonical_task_id(tid)) for tid in TASKS]
     aggregate = sum(item["score"] for item in scores) / float(max(len(scores), 1))
     agg = strict_score(float(aggregate))
