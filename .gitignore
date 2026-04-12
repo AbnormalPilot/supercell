@@ -43,7 +43,8 @@ Thumbs.db
 # Hackathon private reference (not for public repo)
 info.md
 
-# Root __init__ not needed
-__init__.py
+# Ignore __init__.py in subdirs (except server/)
+# Root __init__.py is kept (some validators need the repo to be a package)
+!__init__.py
 !server/__init__.py
 models/
