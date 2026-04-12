@@ -574,7 +574,7 @@
         set("time-step", `${String(observation.time_step).padStart(2, "0")} / ${String(observation.max_time_steps).padStart(2, "0")}`);
         set("vis-value", `${observation.weather.visibility_nm.toFixed(1)} nm`);
         set("wind-value", `${Math.round(observation.weather.wind_knots)} kt`);
-        set("mayday-count", observation.flights.filter((f) => f.emergency === "MAYDAY").length);
+        set("mayday-count", (observation.flights || []).filter((f) => f.emergency === "MAYDAY").length);
         set("landed-count", observation.landed_safely);
         set("crashed-count", observation.crashed);
         set("episode-reward", (observation.episode_reward ?? 0).toFixed(1));
@@ -678,7 +678,7 @@
                 `[TWR] All aircraft on approach, expect vectors for ILS RWY 27. Current vis ${observation.weather.visibility_nm.toFixed(1)} nm.`,
                 "tower"
             );
-            observation.flights.forEach((f) => {
+            (observation.flights || []).forEach((f) => {
                 if (f.emergency === "MAYDAY") {
                     logLine(
                         `[${f.callsign}] MAYDAY MAYDAY MAYDAY. Fuel critical ${Math.round(f.fuel_minutes)} minutes. Request immediate landing.`,
@@ -696,7 +696,7 @@
 
     async function clearToLand() {
         // If nothing is selected, pick the best default so the button "just works".
-        if (selectedIndex === null || !observation || !observation.flights[selectedIndex]) {
+        if (selectedIndex === null || !observation || !observation.flights || !observation.flights[selectedIndex]) {
             const i = bestDefaultIndex();
             if (i === null) {
                 logLine("[TWR] No inbound traffic. Load a scenario first.", "sys");
@@ -929,9 +929,9 @@
         else if (ev.key === "2") resetTask("medium");
         else if (ev.key === "3") resetTask("hard");
         else if (ev.key === "4") resetTask("extra_hard");
-        else if (ev.key === "ArrowDown" && observation && observation.flights.length) {
+        else if (ev.key === "ArrowDown" && observation && observation.flights && observation.flights.length) {
             selectFlight(((selectedIndex ?? -1) + 1) % observation.flights.length);
-        } else if (ev.key === "ArrowUp" && observation && observation.flights.length) {
+        } else if (ev.key === "ArrowUp" && observation && observation.flights && observation.flights.length) {
             const len = observation.flights.length;
             selectFlight(((selectedIndex ?? 0) - 1 + len) % len);
         }
