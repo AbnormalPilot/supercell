@@ -216,20 +216,16 @@ def create_app() -> FastAPI:
         }
 
     def _task_summary(internal_id: str) -> dict[str, Any]:
-        """Compact payload for /tasks listing."""
+        """Compact payload for /tasks listing — matches reference exactly."""
         data = TASKS[internal_id]()
         extra = _TASK_EXTRA.get(internal_id, {})
         return {
             "id": canonical_task_id(internal_id),
-            "internal_id": internal_id,
             "name": data["task_name"],
             "difficulty": extra.get("difficulty", "medium"),
             "objective": extra.get("objective", data["description"])[:240],
             "max_steps": data["max_steps"],
-            "num_flights": len(data["flights"]),
             "description": data["description"],
-            "reward_range": [0.01, 0.99],
-            "has_grader": True,
         }
 
     @app.get("/tasks", tags=["Environment Info"])
@@ -288,38 +284,32 @@ def create_app() -> FastAPI:
             canon = canonical_task_id(internal_id)
             per_task.append({
                 "task_id": canon,
-                "id": canon,
                 "score": score,
                 "task_score": score,
-                "reward": score,
             })
         overall = sum(e["score"] for e in per_task) / max(1, len(per_task))
         return {
             "scores": per_task,
             "score": overall,
             "task_score": overall,
-            "count": len(per_task),
-            "num_tasks": len(per_task),
         }
 
-    # -- Grade (current episode) -------------------------------------
-    @app.post("/grade", response_model=GradeResponse, tags=["Environment Info"])
-    async def grade() -> GradeResponse:
+    # -- Grade (current episode) — GET only, matches reference --------
+    @app.get("/grade", tags=["Environment Info"])
+    async def grade() -> dict[str, Any]:
         from graders import strict_score
 
         score = strict_score(_ENV_SINGLETON.grade())
         s = _ENV_SINGLETON.state
-        return GradeResponse(
-            task_id=canonical_task_id(s.task_id),
-            score=score,
-            landing_log=list(s.landing_log),
-            crash_log=list(s.crash_log),
-            steps_used=s.time_step,
-            episode_reward=s.episode_reward,
-        )
+        return {
+            "task_id": canonical_task_id(s.task_id),
+            "score": score,
+            "task_score": score,
+        }
 
-    @app.get("/grade", tags=["Environment Info"])
-    async def grade_get() -> GradeResponse:
+    @app.post("/grade", tags=["Environment Info"])
+    async def grade_post() -> dict[str, Any]:
+        """POST variant for UI / backward compat."""
         return await grade()
 
     @app.post("/grade/{task_id}", response_model=GradeResponse, tags=["Environment Info"])
