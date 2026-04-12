@@ -121,9 +121,18 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 ENV_URL: str = os.getenv("ENV_URL", "http://localhost:7860")
-# (LOCAL_IMAGE_NAME already declared above with other env vars)
-TASK_NAME: str = os.getenv("SUPERCELL_TASK", "hard")
 BENCHMARK: str = "supercell"
+
+# All available tasks — the validator expects inference.py to run ALL tasks
+# and emit [START]/[END] for each. Passing submissions iterate all tasks.
+ALL_TASKS: list[str] = ["easy", "medium", "hard", "extra_hard"]
+
+# Which tasks to run: SUPERCELL_TASK can be a comma-separated list or "all"
+_raw_tasks = os.getenv("SUPERCELL_TASK", "").strip()
+if _raw_tasks and _raw_tasks.lower() != "all":
+    TASK_NAMES: list[str] = [t.strip() for t in _raw_tasks.split(",") if t.strip()]
+else:
+    TASK_NAMES = list(ALL_TASKS)  # default: run ALL tasks
 
 MAX_STEPS: int = 70
 SUCCESS_THRESHOLD: float = 0.40
@@ -199,7 +208,7 @@ class EnvClient:
 
 
 def env_reset(http: EnvClient, task_id: str) -> dict[str, Any]:
-    return http.post("/reset", {"episode_id": task_id})
+    return http.post("/reset", {"task_id": task_id, "episode_id": task_id})
 
 
 def env_step(http: EnvClient, flight_index: int) -> dict[str, Any]:
@@ -355,50 +364,21 @@ def call_llm(client: OpenAI, user_prompt: str) -> tuple[Optional[int], Optional[
 # =============================================================================
 
 
-def run_episode() -> None:
-    docker_proc: Optional[subprocess.Popen[bytes]] = None
-    active_url = ENV_URL
-
+def run_single_task(
+    task_name: str,
+    http: "EnvClient",
+    client: "OpenAI",
+) -> None:
+    """Run one task: [START] → steps → [END]. Each task gets its own block."""
     rewards: list[float] = []
     steps_taken = 0
     score = 0.0
     success = False
-    started = False  # whether [START] was emitted
+
+    log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        if LOCAL_IMAGE_NAME:
-            docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
-
-        if not HF_TOKEN:
-            log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-            started = True
-            print("[DEBUG] Missing HF_TOKEN/HF_TOKEN", file=sys.stderr, flush=True)
-            return
-
-        http = EnvClient(base_url=active_url, timeout=30.0)
-        try:
-            http.get("/health")
-        except Exception as exc:
-            log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-            started = True
-            print(
-                f"[DEBUG] Cannot reach environment at {active_url}: {exc}",
-                file=sys.stderr,
-                flush=True,
-            )
-            return
-
-        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-        print(
-            f"[DEBUG] LLM client source: {_OPENAI_CLIENT_SOURCE}",
-            file=sys.stderr,
-            flush=True,
-        )
-
-        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-        started = True
-
-        obs_payload = env_reset(http, TASK_NAME)
+        obs_payload = env_reset(http, task_name)
         done = obs_payload.get("observation", {}).get("done", False)
 
         for step in range(1, MAX_STEPS + 1):
@@ -408,9 +388,8 @@ def run_episode() -> None:
             prompt = build_user_prompt(obs_payload)
             action_idx, llm_error = call_llm(client, prompt)
             if action_idx is None:
-                action_idx = 0  # Safe fallback — index 0 always exists when not done
+                action_idx = 0
 
-            # Clamp to current flight count to avoid /step rejecting it
             flights_count = len(obs_payload.get("observation", {}).get("flights", []))
             if flights_count > 0:
                 action_idx = max(0, min(action_idx, flights_count - 1))
@@ -452,6 +431,59 @@ def run_episode() -> None:
         score = max(0.0, min(1.0, score))
         success = score >= SUCCESS_THRESHOLD
 
+    except Exception as exc:
+        print(f"[DEBUG] Task {task_name} error: {exc}", file=sys.stderr, flush=True)
+
+    log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+
+def main() -> None:
+    """Run ALL tasks, emitting [START]/[END] for each one.
+
+    The hackathon Task Validator counts distinct tasks from the inference
+    stdout. It needs 3+ [START] task=X ... [END] blocks with valid scores
+    to pass "3+ tasks with graders".
+    """
+    docker_proc: Optional[subprocess.Popen[bytes]] = None
+    active_url = ENV_URL
+
+    try:
+        if LOCAL_IMAGE_NAME:
+            docker_proc, active_url = start_docker_container(LOCAL_IMAGE_NAME)
+
+        if not HF_TOKEN:
+            # Even without a token, emit [START]+[END] for each task
+            # so the validator sees the task structure.
+            for task_name in TASK_NAMES:
+                log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
+                log_end(success=False, steps=0, score=0.00, rewards=[])
+            return
+
+        http = EnvClient(base_url=active_url, timeout=30.0)
+        try:
+            http.get("/health")
+        except Exception as exc:
+            for task_name in TASK_NAMES:
+                log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
+                log_end(success=False, steps=0, score=0.00, rewards=[])
+            print(
+                f"[DEBUG] Cannot reach environment at {active_url}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+        print(
+            f"[DEBUG] LLM client source: {_OPENAI_CLIENT_SOURCE}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+        # Run each task sequentially — one [START]+[END] block per task.
+        for task_name in TASK_NAMES:
+            run_single_task(task_name, http, client)
+
     finally:
         if docker_proc is not None:
             try:
@@ -462,11 +494,7 @@ def run_episode() -> None:
                     docker_proc.kill()
                 except Exception:
                     pass
-        # Always emit exactly one [END] line matching the [START] above.
-        if not started:
-            log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
 if __name__ == "__main__":
-    run_episode()
+    main()
