@@ -90,32 +90,83 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # -- Override /state: the canonical OpenEnv /state filters the response
-    # through the base `State` schema, which drops all of our custom fields.
-    # We remove it and re-register one that returns the full ATCState dump.
-    # -- Override /mcp: the canonical handler reports "Environment does not
-    # support MCP" because we didn't wire up mcp_client/mcp_server. The
-    # hackathon task validator calls /mcp tools/list to enumerate tasks, so
-    # we replace /mcp with a minimal JSON-RPC 2.0 handler that exposes each
-    # scenario as an MCP tool with an explicit grader.
+    # -- Override ALL core endpoints so /reset and /step responses
+    # include `score`, `task_score`, and `info` — the hackathon Task
+    # Validator reads these fields to determine whether a task has a
+    # grader. The canonical openenv-core handlers only return
+    # {observation, reward, done}, so the validator sees "no grader".
     from starlette.routing import Route
+
+    _OVERRIDE_PATHS = {"/state", "/mcp", "/reset", "/step"}
     app.router.routes = [
         r for r in app.router.routes
         if not (
             isinstance(r, Route)
-            and getattr(r, "path", None) == "/state"
-            and "GET" in (getattr(r, "methods", None) or set())
-        )
-        and not (
-            isinstance(r, Route)
-            and getattr(r, "path", None) == "/mcp"
-            and "POST" in (getattr(r, "methods", None) or set())
+            and getattr(r, "path", None) in _OVERRIDE_PATHS
         )
     ]
 
-    @app.get("/state", tags=["State Management"], include_in_schema=True)
+    @app.get("/state", tags=["State Management"])
     async def full_state() -> dict[str, Any]:
         return _ENV_SINGLETON.state.model_dump()
+
+    @app.post("/reset", tags=["Environment Control"])
+    async def custom_reset(
+        payload: dict[str, Any] = Body(default_factory=dict),
+    ) -> dict[str, Any]:
+        from graders import strict_score
+
+        task_key = (
+            payload.get("task_id")
+            or payload.get("episode_id")
+            or payload.get("taskId")
+            or payload.get("task")
+            or "easy"
+        )
+        internal = resolve_task_id(str(task_key))
+        obs = _ENV_SINGLETON.reset(episode_id=internal)
+        score = strict_score(_ENV_SINGLETON.grade())
+        return {
+            "observation": obs.model_dump(exclude={"reward", "done", "metadata"}),
+            "reward": float(obs.reward or 0.0),
+            "done": bool(obs.done),
+            "score": score,
+            "task_score": score,
+            "info": {
+                "score": score,
+                "task_score": score,
+                "task_id": canonical_task_id(internal),
+            },
+        }
+
+    @app.post("/step", tags=["Environment Control"])
+    async def custom_step(
+        payload: dict[str, Any] = Body(default_factory=dict),
+    ) -> dict[str, Any]:
+        from graders import strict_score
+        from models import ATCAction
+
+        action_data = payload.get("action", payload)
+        try:
+            action = ATCAction(**action_data)
+        except Exception:
+            action = ATCAction(flight_index=0)
+
+        obs = _ENV_SINGLETON.step(action)
+        score = strict_score(_ENV_SINGLETON.grade())
+        return {
+            "observation": obs.model_dump(exclude={"reward", "done", "metadata"}),
+            "reward": float(obs.reward or 0.0),
+            "done": bool(obs.done),
+            "score": score,
+            "task_score": score,
+            "info": {
+                "score": score,
+                "task_score": score,
+                "task_id": canonical_task_id(_ENV_SINGLETON.state.task_id),
+                "episode_reward": float(_ENV_SINGLETON.state.episode_reward),
+            },
+        }
 
     # -- Monsoon Mumbai tower UI --------------------------------------
     if _STATIC_DIR.exists():
