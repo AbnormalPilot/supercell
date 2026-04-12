@@ -127,21 +127,37 @@ tasks:
     difficulty: easy
     description: Calm November dawn at VABB — one MAYDAY fuel emergency and one medical PAN-PAN with clear skies.
     reward_range: [0.01, 0.99]
+    has_grader: true
+    grader: /grader
+    grader_url: /grader?task_id=task-001-winter-haze
+    grader_endpoint: /grader
 
   - id: task-002-pre-monsoon-squall
     name: Pre-Monsoon Squall
     difficulty: medium
     description: May squall line closes visibility from 8 nm to 1 nm while seven inbounds race the window.
     reward_range: [0.01, 0.99]
+    has_grader: true
+    grader: /grader
+    grader_url: /grader?task_id=task-002-pre-monsoon-squall
+    grader_endpoint: /grader
 
   - id: task-003-mumbai-monsoon-surge
     name: Mumbai Monsoon Surge
     difficulty: hard
     description: Twelve diverted aircraft, three MAYDAYs, fuel traps, oscillating thunderstorm. Fuel-first sequencing beats emergency-label heuristics.
     reward_range: [0.01, 0.99]
+    has_grader: true
+    grader: /grader
+    grader_url: /grader?task_id=task-003-mumbai-monsoon-surge
+    grader_endpoint: /grader
 
   - id: task-004-total-system-chaos
     name: Total System Chaos
     difficulty: hard
     description: Hidden bonus — twenty aircraft, five critical-fuel MAYDAYs, VFR-only jets, violently oscillating weather.
     reward_range: [0.01, 0.99]
+    has_grader: true
+    grader: /grader
+    grader_url: /grader?task_id=task-004-total-system-chaos
+    grader_endpoint: /grader

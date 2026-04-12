@@ -128,6 +128,13 @@ def tasks() -> Dict[str, Any]:
                 "objective": TASKS[tid]()["description"][:240],
                 "max_steps": TASKS[tid]()["max_steps"],
                 "description": TASKS[tid]()["description"],
+                # Grader discovery fields — the Scaler portal counts tasks
+                # that advertise a grader via these fields.
+                "has_grader": True,
+                "grader": f"/grader?task_id={canonical_task_id(tid)}",
+                "grader_url": f"/grader?task_id={canonical_task_id(tid)}",
+                "grader_endpoint": "/grader",
+                "reward_range": [0.01, 0.99],
             }
             for tid in TASKS
         ]
